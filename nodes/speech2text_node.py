@@ -11,31 +11,55 @@ from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
 # over HTTP on every INPUT_TYPES call — that made opening the node
 # pause for seconds and broke offline. Users can still type any other
 # model id from HuggingFace into the dropdown.
+# Curated list of wav2vec2 model ids. The old code queried HuggingFace
+# over HTTP on every INPUT_TYPES call — that made opening the node
+# pause for seconds and broke offline. Users can still type any other
+# model id from HuggingFace into the dropdown.
+#
+# We display the model id verbatim in the dropdown but pair each with
+# a language hint in MODEL_LANGUAGES so the JS side can show a
+# "currently selected: Mandarin Chinese" indicator next to the
+# spell_check_language default.
 DEFAULT_WAV2VEC2_MODELS: tuple[str, ...] = (
-    # English
+    "jonatasgrosman/wav2vec2-large-xlsr-53-chinese-zh-cn",
+    "facebook/wav2vec2-large-xlsr-53-chinese-zh-cn",
+    "facebook/mms-1b-all",
+    "facebook/mms-1b-fl102",
     "jonatasgrosman/wav2vec2-large-xlsr-53-english",
     "facebook/wav2vec2-base-960h",
     "facebook/wav2vec2-large-960h-lv60-self",
-    # Chinese — Mandarin (Simplified)
-    "jonatasgrosman/wav2vec2-large-xlsr-53-chinese-zh-cn",
-    "facebook/wav2vec2-large-xlsr-53-chinese-zh-cn",
-    # Multilingual (covers Chinese + 100+ other languages)
-    "facebook/mms-1b-all",
-    "facebook/mms-1b-fl102",
-    # European
+    "jonatasgrosman/wav2vec2-large-xlsr-53-japanese",
+    "jonatasgrosman/wav2vec2-large-xlsr-53-korean",
     "jonatasgrosman/wav2vec2-large-xlsr-53-spanish",
     "jonatasgrosman/wav2vec2-large-xlsr-53-french",
     "jonatasgrosman/wav2vec2-large-xlsr-53-german",
     "jonatasgrosman/wav2vec2-large-xlsr-53-italian",
     "jonatasgrosman/wav2vec2-large-xlsr-53-portuguese",
     "jonatasgrosman/wav2vec2-large-xlsr-53-russian",
-    # Japanese
-    "jonatasgrosman/wav2vec2-large-xlsr-53-japanese",
-    # Korean
-    "jonatasgrosman/wav2vec2-large-xlsr-53-korean",
-    # Arabic
     "jonatasgrosman/wav2vec2-large-xlsr-53-arabic",
 )
+
+# Human-readable language labels for each model id. Used by the JS
+# extension to surface "Selected: Mandarin Chinese" in the node UI
+# and to drive the spell_check_language default below.
+MODEL_LANGUAGES: dict[str, str] = {
+    "jonatasgrosman/wav2vec2-large-xlsr-53-chinese-zh-cn": "Chinese (中文)",
+    "facebook/wav2vec2-large-xlsr-53-chinese-zh-cn": "Chinese (中文)",
+    "facebook/mms-1b-all": "Multilingual 1000+",
+    "facebook/mms-1b-fl102": "Multilingual 100+",
+    "jonatasgrosman/wav2vec2-large-xlsr-53-english": "English",
+    "facebook/wav2vec2-base-960h": "English",
+    "facebook/wav2vec2-large-960h-lv60-self": "English",
+    "jonatasgrosman/wav2vec2-large-xlsr-53-japanese": "Japanese (日本語)",
+    "jonatasgrosman/wav2vec2-large-xlsr-53-korean": "Korean (한국어)",
+    "jonatasgrosman/wav2vec2-large-xlsr-53-spanish": "Spanish",
+    "jonatasgrosman/wav2vec2-large-xlsr-53-french": "French",
+    "jonatasgrosman/wav2vec2-large-xlsr-53-german": "German",
+    "jonatasgrosman/wav2vec2-large-xlsr-53-italian": "Italian",
+    "jonatasgrosman/wav2vec2-large-xlsr-53-portuguese": "Portuguese",
+    "jonatasgrosman/wav2vec2-large-xlsr-53-russian": "Russian",
+    "jonatasgrosman/wav2vec2-large-xlsr-53-arabic": "Arabic",
+}
 
 # All languages the user can pick. pyspellchecker only supports the
 # top half (Latin-alphabet); the bottom half (CJK etc.) all map to
@@ -101,16 +125,18 @@ class speech2text:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                # The audio_file input accepts EITHER:
-                #   - a STRING (file path or URL) — typed in or wired
-                #     from a custom upstream that produces a path
-                #   - an AUDIO dict from ComfyUI's built-in LoadAudio
-                #     node ({"waveform": Tensor[N,1,L], "sample_rate": int})
-                # The _load_audio helper detects which one came in and
-                # handles both. This is the single most common confusion
-                # when wiring up the pipeline, so we accept both shapes
-                # rather than forcing the user to add a converter.
-                "audio_file": (("AUDIO", "STRING"), {"display": "text"}),
+                # `audio_file` is a free-form STRING so the user can
+                # either type a path / URL or connect an output that
+                # produces a path. The shape of the runtime value is
+                # detected in _load_audio():
+                #   - string starting with http(s) -> download
+                #   - other string -> passed to librosa.load
+                #   - dict with a "waveform" key (AUDIO type from
+                #     LoadAudio / VHS) -> take channel 0, resample
+                "audio_file": ("STRING", {
+                    "display": "text",
+                    "placeholder": "Path, URL, or connect an AUDIO output",
+                }),
                 "wav2vec2_model": (DEFAULT_WAV2VEC2_MODELS, {"display": "dropdown", "default": DEFAULT_WAV2VEC2_MODELS[0]}),
                 "spell_check_language": (SPELL_CHECK_LANGUAGES, {"default": "English", "display": "dropdown"}),  # default set later based on wav2vec2 model selection
                 "framestamps_max_chars": ("INT", {"default": 25, "step": 1, "display": "number"}),
@@ -120,14 +146,18 @@ class speech2text:
             }
         }
 
-    def run(self, audio_file: str, wav2vec2_model: str, spell_check_language: str,
+    def run(self, audio_file, wav2vec2_model: str, spell_check_language: str,
             framestamps_max_chars: int, fps: int = 30, transcription_mode: str = "fill",
             uppercase: bool = True, **_):
         audio = _load_audio(audio_file)
         words = self._transcribe(audio, wav2vec2_model)
         words = _spell_correct(words, spell_check_language)
-        if not uppercase:
-            words = [(w.lower(), s, e) for w, s, e in words]
+        # .upper() is a no-op for CJK characters but harmless; for
+        # Latin-alphabet text it folds to caps. We keep the call so
+        # the behavior matches the user's intent regardless of
+        # whether the language has a concept of case.
+        if uppercase:
+            words = [(w.upper(), s, e) for w, s, e in words]
 
         return (
             {"transcription_data": words, "fps": fps, "transcription_mode": transcription_mode},
