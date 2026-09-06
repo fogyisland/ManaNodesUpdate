@@ -258,6 +258,20 @@ def _load_audio(source, sr: int = 16_000):
     # Case 3: AUDIO dict from LoadAudio / VHS_AudioLoader / etc.
     if isinstance(source, dict) and "waveform" in source:
         waveform = source["waveform"]
+        # Diagnostic: log exactly what we got so the user can see
+        # if LoadAudio produced empty data or a different shape.
+        from ..helpers.logger import logger
+        try:
+            shape = tuple(waveform.shape)
+        except AttributeError:
+            shape = type(waveform).__name__
+        logger().info(
+            "Speech recognition AUDIO dict: waveform shape=%s, "
+            "sample_rate=%s, keys=%s",
+            shape,
+            source.get("sample_rate"),
+            list(source.keys()),
+        )
         # waveform is (channels, samples) or (1, samples) or (samples,)
         if hasattr(waveform, "detach"):  # torch tensor
             arr = waveform.detach().cpu().float().numpy()
@@ -273,6 +287,12 @@ def _load_audio(source, sr: int = 16_000):
 
     # Cases 1 & 2: STRING (file path or URL)
     if not isinstance(source, str):
+        from ..helpers.logger import logger
+        logger().error(
+            "audio_file must be a STRING (path/URL) or an AUDIO dict; "
+            "got %s: %r",
+            type(source).__name__, source,
+        )
         raise ValueError(
             f"audio_file must be a STRING (path/URL) or an AUDIO dict; "
             f"got {type(source).__name__}: {source!r}"
