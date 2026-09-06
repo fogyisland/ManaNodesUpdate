@@ -24,11 +24,15 @@ Schedule = List[dict]
 # --------------------------------------------------------------------------- #
 # Parsing / serialization                                                     #
 # --------------------------------------------------------------------------- #
-def parse_scheduled_string(raw: str) -> tuple[Schedule, str | None]:
-    """Parse a "JSON-list$animation_reset" string.
+def parse_scheduled_string(raw: str) -> tuple[list | dict, str | None]:
+    """Parse a "JSON$animation_reset" string.
 
-    Returns (keyframes, animation_reset). The animation_reset is None
-    when the user wrote the schedule by hand without the suffix.
+    Returns (schedule, animation_reset). The schedule is whatever the
+    JSON head parsed to:
+      - list of {x, y} dicts (the output of Scheduled Values /
+        Preset Color Animations)
+      - dict mapping property name -> list (advanced per-property input)
+      - empty list when the input is empty / unparseable
     """
     if not raw or raw == "{}":
         return [], None
@@ -41,7 +45,7 @@ def parse_scheduled_string(raw: str) -> tuple[Schedule, str | None]:
         data = json.loads(head)
     except (json.JSONDecodeError, TypeError):
         return [], reset
-    if not isinstance(data, list):
+    if not isinstance(data, (list, dict)):
         return [], reset
     return data, reset
 

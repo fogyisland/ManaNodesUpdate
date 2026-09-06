@@ -1,6 +1,18 @@
-import json
-
+from ..helpers.animation import parse_scheduled_string
 from ..helpers.font_loader import combined_font_list
+
+
+# Properties that font2img treats as "animatable" — i.e. it expects a
+# (value, animation_reset) tuple. When `scheduled_values` is a flat
+# keyframe list (the format emitted by Scheduled Values /
+# Preset Color Animations), the same list is broadcast to every property
+# in this set. Per-property dict input is also supported for advanced use.
+_ANIMATABLE_PROPS = (
+    "kerning", "border_width",
+    "shadow_offset_x", "shadow_offset_y",
+    "font_size", "x_offset", "y_offset", "rotation",
+    "rotation_anchor_x", "rotation_anchor_y",
+)
 
 
 class text_graphic_element:
@@ -12,8 +24,6 @@ class text_graphic_element:
         pass
 
     # Font discovery is shared with font2img via helpers/font_loader.
-    # The legacy per-class duplicates were removed when matplotlib's
-    # `font_manager` dependency moved to the helper module.
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -37,9 +47,11 @@ class text_graphic_element:
                 "rotation_anchor_y": ("INT", {"default": 0, "step": 1}),
             },
             "optional": {
-                # Lets users feed outputs of Scheduled Values / Preset Color Animations
-                # into any of the animatable properties (font_size, x_offset, etc.).
-                # Format: JSON-list string optionally followed by "$<animation_reset>".
+                # Accepts the wire format from Scheduled Values /
+                # Preset Color Animations: `JSON-keyframes$reset_mode`.
+                # A flat list of {x, y} keyframes is broadcast to every
+                # animatable property; a dict with property names is
+                # used per-property.
                 "scheduled_values": ("STRING", {"default": "{}", "display": "text", "forceInput": True}),
             },
         }
@@ -48,51 +60,68 @@ class text_graphic_element:
     RETURN_TYPES = ("TEXT_GRAPHIC_ELEMENT",)
     RETURN_NAMES = ("font",)
     FUNCTION = "run"
-    #INPUT_IS_LIST = True
 
-    def parse_int_or_json(self, value):
-        """Parse the input as JSON if it's a string in JSON format, otherwise return as is."""
+    # ------------------------------------------------------------------ #
+    # Output shaping — font2img expects each animatable property to be a  #
+    # (value, animation_reset) tuple, and color props to be (color, None) #
+    # when supplied as strings.                                           #
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _shape_scalar(value, reset):
+        """Wrap a scalar widget value as (value, reset_or_None)."""
+        return (value, reset)
+
+    @staticmethod
+    def _shape_color(value, reset=None):
+        """Colors come in as plain strings; wrap so the consumer sees a tuple."""
         if isinstance(value, str):
-            # Extracting and removing the $animation_reset part
-            if '$' in value:
-                parts = value.split('$', 1)
-                value = parts[0]  # JSON part
-                animation_reset = parts[1]  # animation_reset part
-            else:
-                animation_reset = None
+            return (value, reset)
+        return value
 
-            try:
-                json_value = json.loads(value)
-            except json.JSONDecodeError:
-                json_value = value
-
-            return json_value, animation_reset
-        
-        return value, None
-
-    def process_color_input(self, border_color):
-        if isinstance(border_color, str):
-            return (border_color, None)
-        return border_color
-
+    # ------------------------------------------------------------------ #
+    # Main pipeline                                                       #
+    # ------------------------------------------------------------------ #
     def run(self, **kwargs):
-        settings_string = kwargs.get('scheduled_values', '{}')
-        json_settings, animation_reset_from_string = self.parse_int_or_json(settings_string)
+        # Parse scheduled_values. The string is either
+        #   "{...}" / "[]"        — no animation_reset suffix
+        #   "[...]$word"          — list with reset mode
+        #   "{prop: [...], ...}$word" — per-property dict (advanced)
+        keyframes, reset_mode = parse_scheduled_string(
+            kwargs.get("scheduled_values", "{}")
+        )
+
+        # If a non-empty flat list was supplied, broadcast to every
+        # animatable property. If a dict was supplied, look up per
+        # property; if a key is missing, fall back to the widget value.
+        # An empty list means "no schedule" — leave widget values alone.
+        if isinstance(keyframes, list):
+            per_property = (
+                {prop: (keyframes, reset_mode) for prop in _ANIMATABLE_PROPS}
+                if keyframes else {}
+            )
+        elif isinstance(keyframes, dict):
+            per_property = {
+                prop: (keyframes[prop], reset_mode)
+                for prop in _ANIMATABLE_PROPS
+                if prop in keyframes
+            }
+        else:
+            per_property = {}
+
         settings = {
-            'font_file': json_settings.get('font_file', kwargs.get('font_file')),
-            'font_color': self.process_color_input(kwargs.get('font_color')),
-            'kerning': json_settings.get('kerning', self.parse_int_or_json(kwargs.get('kerning'))),
-            'border_width': json_settings.get('border_width', self.parse_int_or_json(kwargs.get('border_width'))),
-            'border_color': self.process_color_input(kwargs.get('border_color')),
-            'shadow_color': self.process_color_input(kwargs.get('shadow_color')),
-            'shadow_offset_x': json_settings.get('shadow_offset_x', self.parse_int_or_json(kwargs.get('shadow_offset_x'))),
-            'shadow_offset_y': json_settings.get('shadow_offset_y', self.parse_int_or_json(kwargs.get('shadow_offset_y'))),
-            'font_size': json_settings.get('font_size', self.parse_int_or_json(kwargs.get('font_size'))),
-            'x_offset': json_settings.get('x_offset', self.parse_int_or_json(kwargs.get('x_offset'))),
-            'y_offset': json_settings.get('y_offset', self.parse_int_or_json(kwargs.get('y_offset'))),
-            'rotation': json_settings.get('rotation', self.parse_int_or_json(kwargs.get('rotation'))),
-            'rotation_anchor_x': json_settings.get('rotation_anchor_x', self.parse_int_or_json(kwargs.get('rotation_anchor_x'))),
-            'rotation_anchor_y': json_settings.get('rotation_anchor_y', self.parse_int_or_json(kwargs.get('rotation_anchor_y'))),
+            "font_file": kwargs.get("font_file"),
+            "font_color": self._shape_color(kwargs.get("font_color")),
+            "border_color": self._shape_color(kwargs.get("border_color")),
+            "shadow_color": self._shape_color(kwargs.get("shadow_color")),
         }
+        # Add the animatable properties, preferring the scheduled list
+        # over the widget's static value.
+        for prop in _ANIMATABLE_PROPS:
+            if prop in per_property:
+                schedule, reset = per_property[prop]
+                settings[prop] = (schedule, reset)
+            else:
+                settings[prop] = self._shape_scalar(kwargs.get(prop), None)
 
         return (settings,)
+
