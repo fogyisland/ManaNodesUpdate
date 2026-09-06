@@ -114,7 +114,7 @@ def _load_wav2vec2(model_id: str) -> tuple:
 class speech2text:
     """Speech recognition node (wav2vec2 + optional spell correction)."""
 
-    DESCRIPTION = "魔力节点 — 语音识别。支持中文、英文、日文、韩文等多语种 wav2vec2 转录 + 字幕格式化。试试搜索：mana、魔力、语音、转录、字幕、识别、中文、中文识别。 Mana Nodes — speech recognition. Multilingual wav2vec2 transcription (Chinese, English, Japanese, Korean + 9 more languages) with caption-line formatting. Try searching: mana, speech, transcribe, whisper, wav2vec, stt, asr, caption, chinese, 中文."
+    DESCRIPTION = "魔力节点 — 语音识别。支持中文、英文、日文、韩文等多语种 wav2vec2 转录 + 字幕格式化。试试搜索：mana、魔力、语音、转录、字幕、识别、中文、中文识别。**输入 audio_file 必须从 LoadAudio 节点接入**。 Mana Nodes — speech recognition. Multilingual wav2vec2 transcription (Chinese, English, Japanese, Korean + 9 more languages) with caption-line formatting. Try searching: mana, speech, transcribe, whisper, wav2vec, stt, asr, caption, chinese, 中文. **Connect audio_file from a LoadAudio node.**"
 
     CATEGORY = "💠 Mana Nodes"
     RETURN_TYPES = ("TRANSCRIPTION", "STRING", "STRING", "STRING")
@@ -129,20 +129,14 @@ class speech2text:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                # `audio_file` accepts EITHER form so the user can
-                # wire it however they want:
-                #   - AUDIO dict from LoadAudio / VHS_AudioLoad etc.
-                #     ({"waveform": Tensor, "sample_rate": int})
-                #     — connect an output, no need to save to disk
-                #   - STRING (file path or URL)
-                #     — type it in, or wire from any node that
-                #     produces a path string
-                # _load_audio() detects which one came in at runtime
-                # and routes accordingly.
-                "audio_file": (("AUDIO", "STRING"), {
-                    "display": "text",
-                    "placeholder": "Connect AUDIO output or type a path/URL",
-                }),
+                # `audio_file` is an AUDIO connection point. Wire it
+                # from ComfyUI's built-in LoadAudio node (or any
+                # other node that outputs AUDIO, e.g. VHS_LoadAudio).
+                # The node does NOT take a string path directly —
+                # save the file to ComfyUI/input/audio/ and select
+                # it in LoadAudio, or use VHS_LoadAudioPath which
+                # accepts a path string and outputs an AUDIO dict.
+                "audio_file": ("AUDIO",),
                 "wav2vec2_model": (DEFAULT_WAV2VEC2_MODELS, {"display": "dropdown", "default": DEFAULT_WAV2VEC2_MODELS[0]}),
                 "spell_check_language": (SPELL_CHECK_LANGUAGES, {"default": "English", "display": "dropdown"}),  # default set later based on wav2vec2 model selection
                 "framestamps_max_chars": ("INT", {"default": 25, "step": 1, "display": "number"}),
@@ -192,16 +186,14 @@ class speech2text:
 def _load_audio(source, sr: int = 16_000):
     """Load an audio waveform as a 1-D numpy array at `sr` Hz.
 
-    Accepts three input shapes so the user can wire this node however
-    they want:
+    The canonical input is an AUDIO dict from ComfyUI's LoadAudio
+    node ({"waveform": Tensor[channels, samples], "sample_rate": int}).
+    We also accept a few legacy / fallback shapes so the function is
+    robust to other ComfyUI versions:
 
-      1. STRING — local file path. Passed straight to librosa.load.
-      2. STRING — http(s)://... URL. Downloaded to a temp file, then
-         read with librosa.load.
-      3. dict with a "waveform" key (ComfyUI's AUDIO type, e.g. from
-         LoadAudio). The waveform is a torch tensor of shape
-         (channels, samples); we take channel 0 and trust the dict's
-         sample_rate.
+      1. dict with "waveform" key  ->  AUDIO type (the main case)
+      2. string starting with http(s)://  ->  download to temp, load
+      3. local file path string  ->  load directly with librosa
     """
     # Case 3: AUDIO dict from LoadAudio / VHS_AudioLoader / etc.
     if isinstance(source, dict) and "waveform" in source:
