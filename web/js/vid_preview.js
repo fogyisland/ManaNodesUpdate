@@ -173,14 +173,28 @@ export function addVideoPreview(nodeType, options = {}) {
     }
 
     const promises = imageURLs.map((url) => {
+      // `new URL()` throws on invalid input. Some upstream code
+      // (e.g. the localStorage save/load round-trip, or an
+      // unrendered video) hands us a string that doesn't parse —
+      // skip those instead of taking the whole canvas down.
+      if (typeof url !== "string" || !url) {
+        return Promise.resolve(null);
+      }
       if (url.startsWith('/view')) {
         url = window.location.origin + url;
       }
 
-      const u = new URL(url);
+      let u;
+      try {
+        u = new URL(url);
+      } catch (_) {
+        console.warn('[Mana] skipping invalid preview URL:', url);
+        return Promise.resolve(null);
+      }
+
       const filename =
         u.searchParams.get('filename') || u.searchParams.get('name') || u.pathname.split('/').pop();
-      const ext = filename.split('.').pop();
+      const ext = (filename || '').split('.').pop();
       const format = ['gif', 'webp', 'avif'].includes(ext) ? 'image' : 'video';
       if (format === 'video') {
         return createVideoNode(url);
@@ -320,11 +334,14 @@ export function addVideoPreview(nodeType, options = {}) {
 
 app.registerExtension({
   name: "ManaNodes.audio2video",
+  // `init` is called synchronously by ComfyUI before any async
+  // `await import()` is possible, so we have to use the raw DOM API
+  // here — the lazy-loaded `$el` from earlier is only available
+  // inside async callbacks.
   init() {
-    $el('style', {
-      textContent: style,
-      parent: document.head,
-    });
+    const styleEl = document.createElement('style');
+    styleEl.textContent = style;
+    document.head.appendChild(styleEl);
   },
   async beforeRegisterNodeDef(nodeType, nodeData) {
     if (nodeData.name !== "Combine Video") {
