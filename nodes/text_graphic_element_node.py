@@ -1,6 +1,7 @@
-from matplotlib import font_manager
-import os
 import json
+
+from ..helpers.font_loader import combined_font_list
+
 
 class text_graphic_element:
 
@@ -10,42 +11,13 @@ class text_graphic_element:
     def __init__(self):
         pass
 
-    @classmethod
-    def system_font_names(self):
-        mgr = font_manager.FontManager()
-        return {font.name: font.fname for font in mgr.ttflist}
+    # Font discovery is shared with font2img via helpers/font_loader.
+    # The legacy per-class duplicates were removed when matplotlib's
+    # `font_manager` dependency moved to the helper module.
 
-    @classmethod
-    def get_font_files(self, font_dir):
-        extensions = ['.ttf', '.otf', '.woff', '.woff2']
-        return [os.path.join(font_dir, f) for f in os.listdir(font_dir)
-                if os.path.isfile(os.path.join(font_dir, f)) and f.endswith(tuple(extensions))]
-    
-    @classmethod
-    def setup_font_directories(self):
-        script_dir = os.path.dirname(os.path.dirname(__file__))
-        custom_font_files = []
-        for dir_name in ['font', 'font_files']:
-            font_dir = os.path.join(script_dir, dir_name)
-            if os.path.exists(font_dir):
-                custom_font_files.extend(self.get_font_files(font_dir))
-        return custom_font_files
-    
-    @classmethod
-    def combined_font_list(self):
-        system_fonts = self.system_font_names()
-        custom_font_files = self.setup_font_directories()
-
-        # Create a dictionary for custom fonts mapping font file base names to their paths
-        custom_fonts = {os.path.splitext(os.path.basename(f))[0]: f for f in custom_font_files}
-
-        # Merge system_fonts and custom_fonts dictionaries
-        all_fonts = {**system_fonts, **custom_fonts}
-        return all_fonts
-    
     @classmethod
     def INPUT_TYPES(cls):
-        cls.FONTS = cls.combined_font_list()
+        cls.FONTS = combined_font_list()
         cls.FONT_NAMES = sorted(cls.FONTS.keys())
         return {
             "required": {

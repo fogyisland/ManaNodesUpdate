@@ -22,47 +22,19 @@ class font2img:
     def __init__(self):
         pass
 
-    @classmethod
-    def system_font_names(self):
-        mgr = font_manager.FontManager()
-        return {font.name: font.fname for font in mgr.ttflist}
+    # NOTE: font discovery and loading live in helpers/font_loader.py.
+    # The methods below (system_font_names / combined_font_list / etc.)
+    # were duplicates that depended on the matplotlib `font_manager`
+    # import; that import was removed during refactoring and these
+    # methods broke with `NameError: name 'font_manager' is not defined`.
 
-    @classmethod
-    def get_font_files(self, font_dir):
-        extensions = ['.ttf', '.otf', '.woff', '.woff2']
-        return [os.path.join(font_dir, f) for f in os.listdir(font_dir)
-                if os.path.isfile(os.path.join(font_dir, f)) and f.endswith(tuple(extensions))]
-    
-    @classmethod
-    def setup_font_directories(self):
-        script_dir = os.path.dirname(os.path.dirname(__file__))
-        custom_font_files = []
-        for dir_name in ['font', 'font_files']:
-            font_dir = os.path.join(script_dir, dir_name)
-            if os.path.exists(font_dir):
-                custom_font_files.extend(self.get_font_files(font_dir))
-        return custom_font_files
-    
-    @classmethod
-    def combined_font_list(self):
-        system_fonts = self.system_font_names()
-        custom_font_files = self.setup_font_directories()
-
-        # Create a dictionary for custom fonts mapping font file base names to their paths
-        custom_fonts = {os.path.splitext(os.path.basename(f))[0]: f for f in custom_font_files}
-
-        # Merge system_fonts and custom_fonts dictionaries
-        all_fonts = {**system_fonts, **custom_fonts}
-        return all_fonts
-    
     def get_font(self, font_name, font_size) -> ImageFont.FreeTypeFont:
         font_file = self.FONTS[font_name]
         return get_font(font_file, font_size)
 
     @classmethod
     def INPUT_TYPES(self):
-
-        self.FONTS = self.combined_font_list()
+        self.FONTS = combined_font_list()
         self.FONT_NAMES = sorted(self.FONTS.keys())
         return {
             "required": {

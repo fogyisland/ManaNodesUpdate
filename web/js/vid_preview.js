@@ -1,6 +1,20 @@
 import { app } from '../../../scripts/app.js';
 import { api } from "../../../scripts/api.js";
-import { $el } from '../../../scripts/ui.js';
+
+// `scripts/ui.js` is deprecated; in newer ComfyUI builds the helpers
+// (including `$el`) live in `scripts/ui/element.js`. We try the new
+// path first and fall back to a tiny inline shim so the preview still
+// works on older installs. We deliberately do NOT import from
+// `scripts/ui.js` because ComfyUI prints a deprecation warning for it.
+async function _loadEl() {
+    try {
+        const mod = await import("../../../scripts/ui/element.js");
+        return mod.$el;
+    } catch (_) {
+        // Inline shim: just create an element with the given props.
+        return (tag, props) => Object.assign(document.createElement(tag), props || {});
+    }
+}
 
 // ANIM_PREVIEW_WIDGET moved out of app.js into a separate module in newer
 // ComfyUI releases. Look it up defensively; fall back to the historical
@@ -30,10 +44,20 @@ async function _getImageHostFactory() {
     return _imageHostFactory;
 }
 
+// Local $el shim. Resolved lazily via _loadEl so the deprecated
+// `scripts/ui.js` import never runs (ComfyUI logs a warning for it).
+let _elShim = null;
+async function _el(tag, props) {
+    if (!_elShim) _elShim = await _loadEl();
+    return _elShim(tag, props);
+}
+
 function _createLocalImageHost(node) {
     // Minimal stand-in: render the first image directly. Good enough for
     // video preview; not a drop-in for the full ComfyUI image host.
-    const el = $el("div.comfy-img-preview", { style: { width: "100%" } });
+    let el = document.createElement("div");
+    el.className = "comfy-img-preview";
+    el.style.width = "100%";
     let currentImg = null;
     return {
         el,
