@@ -139,15 +139,15 @@ class speech2text:
                 "audio_file": ("AUDIO",),
                 "wav2vec2_model": (DEFAULT_WAV2VEC2_MODELS, {"display": "dropdown", "default": DEFAULT_WAV2VEC2_MODELS[0]}),
                 "spell_check_language": (SPELL_CHECK_LANGUAGES, {"default": "English", "display": "dropdown"}),  # default set later based on wav2vec2 model selection
-                "framestamps_max_chars": ("INT", {"default": 25, "step": 1, "display": "number"}),
+                "framestamps_max_chars": ("INT", {"default": 40, "step": 1, "display": "number"}),
                 "fps": ("INT", {"default": 30, "min": 1, "max": 60, "step": 1}),
-                "transcription_mode": (TRANSCRIPTION_MODES, {"default": "line", "display": "dropdown"}),
+                "transcription_mode": (TRANSCRIPTION_MODES, {"default": "fill", "display": "dropdown"}),
                 "uppercase": ("BOOLEAN", {"default": True}),
             }
         }
 
     def run(self, audio_file, wav2vec2_model: str, spell_check_language: str,
-            framestamps_max_chars: int, fps: int = 30, transcription_mode: str = "line",
+            framestamps_max_chars: int, fps: int = 30, transcription_mode: str = "fill",
             uppercase: bool = True, **_):
         audio = _load_audio(audio_file)
         words = self._transcribe(audio, wav2vec2_model)
@@ -158,6 +158,14 @@ class speech2text:
         # whether the language has a concept of case.
         if uppercase:
             words = [(w.upper(), s, e) for w, s, e in words]
+
+        # Final NaN sweep on the way out. Even with the per-stage
+        # filters above, defense in depth: strip any residual
+        # non-finite timestamps so the four outputs are always
+        # well-formed for downstream Text to Image / JSON parsers.
+        import math
+        words = [(w, s, e) for w, s, e in words
+                 if math.isfinite(s) and math.isfinite(e)]
 
         return (
             {"transcription_data": words, "fps": fps, "transcription_mode": transcription_mode},
@@ -173,11 +181,28 @@ class speech2text:
     # Internals                                                           #
     # ------------------------------------------------------------------ #
     def _transcribe(self, audio_array, model_id: str):
+        # Defensive: empty / silent / too-short audio can crash the
+        # model and produce NaN logits. Bail out early with an empty
+        # list so downstream nodes see a well-defined empty result
+        # instead of a stack of "NaN" timestamps.
+        import math
+        if audio_array is None or len(audio_array) == 0:
+            return []
+        if not math.isfinite(float(audio_array.max())) or not math.isfinite(float(audio_array.min())):
+            return []
+        if abs(float(audio_array.max())) < 1e-6 and abs(float(audio_array.min())) < 1e-6:
+            return []  # silence
+
         model, processor = _load_wav2vec2(model_id)
-        inputs = processor(audio_array, sampling_rate=16_000, return_tensors="pt", padding=True)
-        with torch.no_grad():
-            predicted_ids = model(inputs.input_values).logits.argmax(dim=-1)
-        return _group_tokens_into_words(_token_timestamps(predicted_ids, processor))
+        try:
+            inputs = processor(audio_array, sampling_rate=16_000, return_tensors="pt", padding=True)
+            with torch.no_grad():
+                predicted_ids = model(inputs.input_values).logits.argmax(dim=-1)
+            return _group_tokens_into_words(_token_timestamps(predicted_ids, processor))
+        except Exception as e:
+            from ..helpers.logger import logger
+            logger().error("Speech recognition failed: %s", e)
+            return []
 
 
 # --------------------------------------------------------------------------- #
@@ -261,15 +286,21 @@ def _resample_numpy(arr: np.ndarray, src_sr: int, dst_sr: int) -> np.ndarray:
 
 def _token_timestamps(predicted_ids: torch.Tensor, processor) -> list[tuple[str, float]]:
     """Approximate timestamps: 20ms stride for 16 kHz audio."""
+    import math
     stride = int(0.02 * 16_000)
     out = []
     for idx in range(predicted_ids.shape[1]):
         token_id = predicted_ids[0, idx].item()
         if token_id == -100:
             continue
+        time = (stride * idx) / 16_000
+        # The model occasionally emits NaN/inf timestamps for the
+        # padding tail; filter them so the JSON output stays clean.
+        if not math.isfinite(time):
+            continue
         out.append((
             processor.tokenizer.convert_ids_to_tokens(token_id),
-            (stride * idx) / 16_000,
+            time,
         ))
     return out
 
@@ -365,10 +396,21 @@ def _spell_correct(words: list[tuple[str, float, float]], language: str):
 
 
 def _to_framestamps(words: list[tuple[str, float, float]], fps: int, max_chars: int) -> str:
-    """Walk the words, building cumulative substrings of length <= max_chars."""
+    """Walk the words, building cumulative substrings of length <= max_chars.
+
+    Skips words whose start_time is NaN/inf — these come from the model
+    when the audio is too short, silent, or the input was padded with
+    no real signal. Without this guard the JSON would contain
+    "NaN": "..." which downstream nodes (Text to Image) fail to parse.
+    """
+    import math
     lines: list[str] = []
     current = ""
     for word, start_time, _ in words:
+        # Defensive: skip NaN / inf timestamps. Word itself is kept
+        # if we have any valid earlier word so the output isn't empty.
+        if not math.isfinite(start_time):
+            continue
         candidate = f"{current} {word}".strip()
         if len(candidate) <= max_chars:
             current = candidate
