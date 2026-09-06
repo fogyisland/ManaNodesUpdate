@@ -129,24 +129,16 @@ class speech2text:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                # `audio_file` is now a STRING file path. Type or
-                # paste the full path (e.g. "H:\audio\myfile.wav")
-                # or a URL ("https://example.com/audio.mp3"). The
-                # companion web/js/speech2text.js extension adds a
-                # Browse button to the widget so the user can pick
-                # a file instead of typing the path.
-                #
-                # We deliberately DO NOT accept an AUDIO connection
-                # here even though ComfyUI supports it. Reason: in
-                # some ComfyUI versions the AUDIO output from
-                # LoadAudio / VHS_LoadAudio arrived empty (1 sample),
-                # which made the model produce 0 words. A direct
-                # path string is unambiguous: the file is what the
-                # user typed, nothing to lose in transit.
+                # `audio_file` is a plain STRING — type or paste the
+                # full path to an audio file (e.g. "H:\audio\myfile.wav")
+                # or a URL ("https://example.com/audio.mp3"). librosa
+                # loads the file directly. We deliberately don't
+                # accept an AUDIO connection here because some
+                # ComfyUI versions pass through empty (1-sample)
+                # data from LoadAudio, which yielded 0-word output.
                 "audio_file": ("STRING", {
                     "default": "",
-                    "mana_audio_picker": True,
-                    "placeholder": "Path to audio file or URL (use Browse button)",
+                    "placeholder": "Path to audio file (e.g. H:\\audio\\myfile.wav)",
                 }),
                 "wav2vec2_model": (DEFAULT_WAV2VEC2_MODELS, {"display": "dropdown", "default": DEFAULT_WAV2VEC2_MODELS[0]}),
                 "spell_check_language": (SPELL_CHECK_LANGUAGES, {"default": "English", "display": "dropdown"}),  # default set later based on wav2vec2 model selection
