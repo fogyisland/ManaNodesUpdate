@@ -5,11 +5,26 @@ from pathlib import Path
 import os
 import folder_paths
 
+# Bark weights are ~5 GB; cache them under models/Mana/TextToSpeech/
+# so the user can manage them like every other ComfyUI model.
+from ..helpers.models import get_feature_models_dir
+
+# Standard Bark model id. Centralised so a future "switch model"
+# feature only has to change one place.
+BARK_MODEL_ID = "suno/bark"
+
 
 @functools.lru_cache(maxsize=2)
 def _get_bark_pipeline():
-    """Cache the (huge) Bark pipeline so we don't re-download on every call."""
-    return pipeline("text-to-speech", "suno/bark")
+    """Cache the (huge) Bark pipeline so we don't re-download on every call.
+
+    Weights go to <ComfyUI>/models/Mana/TextToSpeech/ via
+    cache_dir. The first call downloads ~5 GB; subsequent calls
+    return immediately. The user can also pre-place the
+    HuggingFace cache structure there manually to skip the download.
+    """
+    cache_dir = get_feature_models_dir("TextToSpeech")
+    return pipeline("text-to-speech", BARK_MODEL_ID, cache_dir=cache_dir)
 
 
 class text2speech:

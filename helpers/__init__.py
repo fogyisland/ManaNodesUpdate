@@ -12,7 +12,7 @@ from .animation import (
 )
 from .font_loader import combined_font_list, get_font, list_custom_fonts, list_system_fonts
 from .logger import logger
-from .models import MANA_MODELS_DIR, ensure_mana_models_dir
+from .models import MANA_MODELS_DIR, ensure_mana_models_dir, get_feature_models_dir
 from .utils import ensure_opencv, pil2tensor, stack_audio_tensors, tensor2pil
 
 __all__ = [
