@@ -125,17 +125,19 @@ class speech2text:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                # `audio_file` is a free-form STRING so the user can
-                # either type a path / URL or connect an output that
-                # produces a path. The shape of the runtime value is
-                # detected in _load_audio():
-                #   - string starting with http(s) -> download
-                #   - other string -> passed to librosa.load
-                #   - dict with a "waveform" key (AUDIO type from
-                #     LoadAudio / VHS) -> take channel 0, resample
-                "audio_file": ("STRING", {
+                # `audio_file` accepts EITHER form so the user can
+                # wire it however they want:
+                #   - AUDIO dict from LoadAudio / VHS_AudioLoad etc.
+                #     ({"waveform": Tensor, "sample_rate": int})
+                #     — connect an output, no need to save to disk
+                #   - STRING (file path or URL)
+                #     — type it in, or wire from any node that
+                #     produces a path string
+                # _load_audio() detects which one came in at runtime
+                # and routes accordingly.
+                "audio_file": (("AUDIO", "STRING"), {
                     "display": "text",
-                    "placeholder": "Path, URL, or connect an AUDIO output",
+                    "placeholder": "Connect AUDIO output or type a path/URL",
                 }),
                 "wav2vec2_model": (DEFAULT_WAV2VEC2_MODELS, {"display": "dropdown", "default": DEFAULT_WAV2VEC2_MODELS[0]}),
                 "spell_check_language": (SPELL_CHECK_LANGUAGES, {"default": "English", "display": "dropdown"}),  # default set later based on wav2vec2 model selection
