@@ -129,17 +129,25 @@ class speech2text:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                # `audio_file` is a pure AUDIO connection point.
-                # Wire it from ComfyUI's built-in LoadAudio node
-                # (or VHS_LoadAudioPath if you want a file path —
-                # VHS_LoadAudioPath takes a STRING path and outputs
-                # an AUDIO dict, which connects here cleanly).
-                # We can't use (("AUDIO", "STRING"), ...) here: newer
-                # ComfyUI rejects the union with "Return type mismatch
-                # between linked nodes: received_type(AUDIO) mismatch
-                # input_type(('AUDIO', 'STRING'))" when the upstream
-                # node outputs a single AUDIO.
-                "audio_file": ("AUDIO",),
+                # `audio_file` is now a STRING file path. Type or
+                # paste the full path (e.g. "H:\audio\myfile.wav")
+                # or a URL ("https://example.com/audio.mp3"). The
+                # companion web/js/speech2text.js extension adds a
+                # Browse button to the widget so the user can pick
+                # a file instead of typing the path.
+                #
+                # We deliberately DO NOT accept an AUDIO connection
+                # here even though ComfyUI supports it. Reason: in
+                # some ComfyUI versions the AUDIO output from
+                # LoadAudio / VHS_LoadAudio arrived empty (1 sample),
+                # which made the model produce 0 words. A direct
+                # path string is unambiguous: the file is what the
+                # user typed, nothing to lose in transit.
+                "audio_file": ("STRING", {
+                    "default": "",
+                    "mana_audio_picker": True,
+                    "placeholder": "Path to audio file or URL (use Browse button)",
+                }),
                 "wav2vec2_model": (DEFAULT_WAV2VEC2_MODELS, {"display": "dropdown", "default": DEFAULT_WAV2VEC2_MODELS[0]}),
                 "spell_check_language": (SPELL_CHECK_LANGUAGES, {"default": "English", "display": "dropdown"}),  # default set later based on wav2vec2 model selection
                 "framestamps_max_chars": ("INT", {"default": 40, "step": 1, "display": "number"}),

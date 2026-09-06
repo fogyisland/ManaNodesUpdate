@@ -1,16 +1,19 @@
 // Speech Recognition node UI helper.
 //
 // What this does:
-//   1. Shows the current wav2vec2 model's language as a small badge
+//   1. Adds a "Browse" button to the audio_file widget that opens
+//      a native file picker. The selected path goes straight into
+//      the text field — no need to type long Windows paths.
+//   2. Shows the current wav2vec2 model's language as a small badge
 //      above the spell_check_language widget, so the user can see at
 //      a glance whether they have a Chinese / English / multilingual
 //      model selected.
-//   2. When the user picks a different wav2vec2 model, the JS updates
+//   3. When the user picks a different wav2vec2 model, the JS updates
 //      the spell_check_language default to match (Chinese model ->"
 //      Chinese (中文)", English model -> "English", etc.) so the user
 //      doesn't have to manually re-pick it. They can still override
 //      it after the auto-pick.
-//   3. Same auto-pick for uppercase: CJK languages don't have a
+//   4. Same auto-pick for uppercase: CJK languages don't have a
 //      concept of case so the JS sets uppercase=False automatically.
 
 import { app } from "../../../scripts/app.js";
@@ -154,5 +157,80 @@ app.registerExtension({
                 updateBadge();
             };
         };
+    },
+});
+
+// ---------------------------------------------------------------------------
+// File picker button for the audio_file widget.
+//
+// We mark the widget with `mana_audio_picker: True` in INPUT_TYPES so
+// the JS can find it and attach a "Browse..." button. Clicking the
+// button opens a native <input type="file"> dialog; the user picks
+// a .wav / .mp3 / .flac / etc., and we write the absolute path back
+// into the widget. Accept="audio/*" lets the OS filter to audio
+// files so the user doesn't have to scroll past a thousand videos.
+// ---------------------------------------------------------------------------
+function addAudioFilePicker(node) {
+    const widget = node.widgets.find((w) => w.name === "audio_file");
+    if (!widget) return;
+    if (widget.element && widget.element.dataset.manaPickerAttached === "1") return;
+
+    // Build a small button styled to match ComfyUI's widget look.
+    const btn = document.createElement("button");
+    btn.textContent = "Browse audio file";
+    btn.title = "Open a native file picker to select an audio file";
+    btn.style.cssText = [
+        "margin-left: 6px",
+        "padding: 4px 10px",
+        "background: #2a3a4f",
+        "color: #d4e4ff",
+        "border: 1px solid #3d5a8c",
+        "border-radius: 4px",
+        "font-size: 12px",
+        "cursor: pointer",
+    ].join(";");
+    btn.onmouseenter = () => { btn.style.background = "#3a4a5f"; };
+    btn.onmouseleave = () => { btn.style.background = "#2a3a4f"; };
+
+    // Hidden <input type="file"> we click when the user presses Browse.
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = "audio/*,.wav,.mp3,.flac,.ogg,.m4a,.aac,.opus,.wma";
+    fileInput.style.display = "none";
+
+    fileInput.addEventListener("change", () => {
+        const f = fileInput.files && fileInput.files[0];
+        if (!f) return;
+        // ComfyUI lives on Windows / Linux / Mac. On Win we want
+        // backslashes; elsewhere forward slashes. File.path on the
+        // input element is the cleanest cross-platform answer.
+        const path = (f.path || f.name).replace(/\\/g, "/");
+        widget.value = path;
+        // Force a redraw so the new value is visible.
+        if (node.onResize) node.onResize(node.size);
+        app.graph?.setDirtyCanvas(true, false);
+    });
+
+    btn.addEventListener("click", () => fileInput.click());
+
+    // Place the button next to the widget's input element.
+    const host = widget.element || widget.inputEl?.parentElement;
+    if (host) {
+        host.style.display = "flex";
+        host.style.alignItems = "center";
+        host.appendChild(btn);
+        host.appendChild(fileInput);
+        host.dataset.manaPickerAttached = "1";
+    }
+}
+
+// Register the picker on every Speech Recognition node that's added.
+app.registerExtension({
+    name: "ManaNodes.speech2text.filepicker",
+    nodeCreated(node) {
+        if (node.comfyClass !== "Speech Recognition") return;
+        // Defer to next tick so ComfyUI has finished mounting the
+        // widget DOM; otherwise widget.element might be null.
+        setTimeout(() => addAudioFilePicker(node), 0);
     },
 });
