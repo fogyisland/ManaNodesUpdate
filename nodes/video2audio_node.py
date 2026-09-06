@@ -22,7 +22,7 @@ from ..helpers.utils import ensure_opencv, pil2tensor
 class video2audio:
     """Read a video range, return frames + audio path."""
 
-    DESCRIPTION = "Mana Nodes — split video. Extract a frame range as IMAGE tensors and the matching audio slice. Try searching: mana, video, frames, extract, ffmpeg, split."
+    DESCRIPTION = "魔力节点 — 分割视频。提取帧范围为 IMAGE 张量 + 匹配音频。试试搜索：mana、魔力、视频、帧、提取、分割。 Mana Nodes — split video. Extract a frame range as IMAGE tensors and the matching audio slice. Try searching: mana, video, frames, extract, ffmpeg, split."
 
     # Class-level cache so INPUT_TYPES doesn't re-scan the directory
     # every time a node is dropped on the canvas.

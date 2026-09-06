@@ -33,7 +33,7 @@ _BLACK = ((0, 0, 0),)
 class color_animations:
     """Animate a hand-picked RGB palette across N frames."""
 
-    DESCRIPTION = "Mana Nodes — preset color animations. Cycle through rainbow, sunset, sky, ocean, etc. Try searching: mana, color, palette, rainbow, gradient."
+    DESCRIPTION = "魔力节点 — 预设颜色动画。循环播放彩虹、夕阳、天空、海洋等调色板。试试搜索：mana、魔力、颜色、调色板、彩虹、渐变。 Mana Nodes — preset color animations. Cycle through rainbow, sunset, sky, ocean, etc. Try searching: mana, color, palette, rainbow, gradient."
 
     CATEGORY = "💠 Mana Nodes/📅 Value Scheduling"
     RETURN_TYPES = ("STRING",)

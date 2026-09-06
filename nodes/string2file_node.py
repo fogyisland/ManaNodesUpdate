@@ -4,7 +4,7 @@ import folder_paths
 
 class string2file:
 
-    DESCRIPTION = "Mana Nodes — save/preview text. Writes a STRING to a .txt file and shows an inline preview. Try searching: mana, text, string, save, file, txt, write."
+    DESCRIPTION = "魔力节点 — 保存/预览文本。把 STRING 写入 .txt 文件并显示预览。试试搜索：mana、魔力、文本、字符串、保存、文件。 Mana Nodes — save/preview text. Writes a STRING to a .txt file and shows an inline preview. Try searching: mana, text, string, save, file, txt, write."
 
     def __init__(self):
         pass

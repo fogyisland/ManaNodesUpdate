@@ -17,7 +17,7 @@ _ANIMATABLE_PROPS = (
 
 class text_graphic_element:
 
-    DESCRIPTION = "Mana Nodes — font properties. Defines font, size, color, border, shadow, and offsets. Try searching: mana, font, typography, text style."
+    DESCRIPTION = "魔力节点 — 字体属性。定义字体、字号、颜色、描边、阴影、偏移。试试搜索：mana、魔力、字体、排版、文字样式。 Mana Nodes — font properties. Defines font, size, color, border, shadow, and offsets. Try searching: mana, font, typography, text style."
 
     FONTS = {}
     FONT_NAMES = []

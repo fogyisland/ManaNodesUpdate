@@ -14,7 +14,7 @@ def _get_bark_pipeline():
 
 class text2speech:
 
-    DESCRIPTION = "Mana Nodes — generate audio. Bark text-to-speech. Try searching: mana, tts, bark, speech, voice, audio."
+    DESCRIPTION = "魔力节点 — 生成音频。Bark 文字转语音。试试搜索：mana、魔力、语音合成、tts、语音、音频。 Mana Nodes — generate audio. Bark text-to-speech. Try searching: mana, tts, bark, speech, voice, audio."
 
     def __init__(self):
         pass

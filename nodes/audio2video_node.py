@@ -19,7 +19,7 @@ from ..helpers.utils import tensor2pil
 class audio2video:
     """Combine image batch + optional audio into an MP4."""
 
-    DESCRIPTION = "Mana Nodes — combine video. Stitch an IMAGE batch into an MP4, optionally mux in audio. Try searching: mana, video, render, mp4, mux, combine."
+    DESCRIPTION = "魔力节点 — 合成视频。把 IMAGE 批次拼成 MP4，可选混音。试试搜索：mana、魔力、视频、合成、渲染、mp4。 Mana Nodes — combine video. Stitch an IMAGE batch into an MP4, optionally mux in audio. Try searching: mana, video, render, mp4, mux, combine."
 
     CATEGORY = "💠 Mana Nodes"
     RETURN_TYPES = ("STRING",)

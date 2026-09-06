@@ -15,11 +15,11 @@ from ..helpers.animation import (
 
 class font2img:
 
+    # ComfyUI 的节点搜索框对类描述做子字符串匹配。这里同时列出中文
+    # 和英文同义词，让用户搜索 "mana"、"字幕"、"caption" 等都能找到。
     # ComfyUI's node-search box does a substring match against the
-    # class description, so we list synonyms + the package name here
-    # to make the node discoverable when the user types things like
-    # "mana", "caption", "subtitle", "typography", or "text to image".
-    DESCRIPTION = "Mana Nodes — text to image generator. Renders animated captions, subtitles, and typography. Try searching: mana, caption, subtitle, typography."
+    # class description, so we list synonyms in both languages here.
+    DESCRIPTION = "魔力节点 — 文字转图像生成器。渲染动态字幕、动画文字。试试搜索：mana、魔力、字幕、副标题、排版、文字。 Mana Nodes — text to image generator. Renders animated captions, subtitles, and typography. Try searching: mana, caption, subtitle, typography."
 
     FONTS = {}
     FONT_NAMES = []

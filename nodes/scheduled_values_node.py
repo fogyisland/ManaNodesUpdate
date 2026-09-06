@@ -1,6 +1,6 @@
 class scheduled_values:
 
-    DESCRIPTION = "Mana Nodes — scheduled values. Interactive keyframe chart for animating any Font Properties widget. Try searching: mana, animation, keyframe, timeline, chart."
+    DESCRIPTION = "魔力节点 — 调度值。交互式关键帧图表，驱动任意字体属性动画。试试搜索：mana、魔力、动画、关键帧、时间线、图表。 Mana Nodes — scheduled values. Interactive keyframe chart for animating any Font Properties widget. Try searching: mana, animation, keyframe, timeline, chart."
 
     def __init__(self):
         pass
