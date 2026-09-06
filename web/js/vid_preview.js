@@ -82,7 +82,7 @@ const style = `
 `;
 
 export function chainCallback(object, property, callback) {
-  if (object == undefined) {
+  if (object === undefined || object === null) {
     return;
   }
   if (property in object) {

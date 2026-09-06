@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-from functools import lru_cache
 from pathlib import Path
 
 import cv2

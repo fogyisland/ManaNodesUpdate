@@ -55,7 +55,7 @@ function loadBootstrapCss() {
     document.head.appendChild(link2);
 }
 function chainCallback(object, property, callback) {
-    if (object == undefined) {
+    if (object === undefined || object === null) {
         return;
     }
     if (property in object) {
@@ -425,7 +425,7 @@ class TimelineWidget {
         this.updateChartData();
         this.updatePointsDisplay();
         this.updateGenerateButtonState();
-        if(this.keyframes.length == 0){
+        if(this.keyframes.length === 0){
             this.chartContainer.removeChild(this.pointsDisplay);
             this.deleteGeneratedValues()
         }
