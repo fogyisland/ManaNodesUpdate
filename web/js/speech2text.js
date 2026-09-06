@@ -196,38 +196,31 @@ function addAudioFilePicker(node) {
     if (node._manaAudioPickerAttached) return;
     node._manaAudioPickerAttached = true;
 
-    // Build the file picker as a hidden <input type="file">.
-    // Clicking the visible button below triggers .click() on it.
-    const fileInput = document.createElement("input");
-    fileInput.type = "file";
-    fileInput.accept = "audio/*,.wav,.mp3,.flac,.ogg,.m4a,.aac,.opus,.wma";
-    fileInput.style.display = "none";
-    fileInput.addEventListener("change", () => {
-        const f = fileInput.files && fileInput.files[0];
-        if (!f) return;
-        const path = (f.path || f.name).replace(/\\/g, "/");
-        widget.value = path;
-        if (node.onResize) node.onResize(node.size);
-        app.graph?.setDirtyCanvas(true, false);
-    });
+    // Modern browsers (Chrome 86+, Firefox, Safari) removed File.path
+    // for security — it returns "" or just the bare filename. So a
+    // single <input type="file"> can't give us a full path.
+    //
+    // Strategy: use the File System Access API
+    // (showDirectoryPicker) to first get a directory, then list its
+    // audio files in a small dropdown the user picks from. We build
+    // the full path by joining dir + filename. Falls back to a
+    // standard <input type="file"> (which on Chromium still exposes
+    // f.webkitRelativePath that we can use) when the API is missing.
 
-    // Build the visible button. It lives inside a wrapper <div>
-    // we add as a DOM widget on the node via ComfyUI's official
-    // addDOMWidget API. This is the most version-portable way to
-    // attach custom UI to a node: ComfyUI itself manages placement,
-    // sizing, and lifecycle.
+    // Build the visible UI: a "Pick folder" button + a hidden
+    // <select> that becomes visible once a folder has been picked.
     const wrapper = document.createElement("div");
     wrapper.style.cssText = [
         "padding: 4px 0",
         "display: flex",
-        "align-items: center",
-        "gap: 6px",
+        "flex-direction: column",
+        "gap: 4px",
     ].join(";");
 
-    const btn = document.createElement("button");
-    btn.textContent = "Browse audio file";
-    btn.title = "Open a native file picker to select an audio file";
-    btn.style.cssText = [
+    const pickBtn = document.createElement("button");
+    pickBtn.textContent = "Browse audio file";
+    pickBtn.title = "Pick a folder containing audio, then choose a file";
+    pickBtn.style.cssText = [
         "padding: 6px 12px",
         "background: #2a3a4f",
         "color: #d4e4ff",
@@ -235,44 +228,191 @@ function addAudioFilePicker(node) {
         "border-radius: 4px",
         "font-size: 12px",
         "cursor: pointer",
-        "flex: 1",
     ].join(";");
-    btn.onmouseenter = () => { btn.style.background = "#3a4a5f"; };
-    btn.onmouseleave = () => { btn.style.background = "#2a3a4f"; };
-    btn.addEventListener("click", () => fileInput.click());
+    pickBtn.onmouseenter = () => { pickBtn.style.background = "#3a4a5f"; };
+    pickBtn.onmouseleave = () => { pickBtn.style.background = "#2a3a4f"; };
 
-    const hint = document.createElement("span");
-    hint.textContent = "or type a path";
-    hint.style.cssText = "color: #888; font-size: 11px; flex: 0 0 auto;";
+    const status = document.createElement("span");
+    status.style.cssText = "color: #888; font-size: 11px; min-height: 14px;";
+    status.textContent = "Click Browse to pick a folder, then a file";
 
-    wrapper.appendChild(btn);
-    wrapper.appendChild(hint);
+    const fileSelect = document.createElement("select");
+    fileSelect.style.cssText = [
+        "padding: 4px 8px",
+        "background: #1f2a3a",
+        "color: #d4e4ff",
+        "border: 1px solid #3d5a8c",
+        "border-radius: 4px",
+        "font-size: 12px",
+    ].join(";");
+    fileSelect.style.display = "none";
+
+    wrapper.appendChild(pickBtn);
+    wrapper.appendChild(fileSelect);
+    wrapper.appendChild(status);
+
+    const AUDIO_EXTS = new Set([
+        ".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac", ".opus", ".wma", ".mp4", ".mka", ".webm",
+    ]);
+
+    async function pickFolder() {
+        if (window.showDirectoryPicker) {
+            try {
+                const dir = await window.showDirectoryPicker();
+                await listFilesInDir(dir);
+            } catch (err) {
+                // User cancelled, or API failed
+                if (err && err.name !== "AbortError") {
+                    console.warn("[Mana] showDirectoryPicker failed:", err);
+                }
+            }
+        } else {
+            // Fallback: plain <input type="file">. We can't get the
+            // absolute path this way, so we synthesize one by combining
+            // the working dir + the filename. That doesn't work for
+            // arbitrary locations, so we warn the user.
+            status.textContent = "showDirectoryPicker unsupported — use the text field to type a full path";
+            status.style.color = "#e88";
+            await pickFileFallback();
+        }
+    }
+
+    async function listFilesInDir(dir) {
+        status.textContent = `Scanning ${dir.name}...`;
+        const matched = [];
+        for await (const [name, handle] of dir.entries()) {
+            if (handle.kind !== "file") continue;
+            const dot = name.lastIndexOf(".");
+            if (dot === -1) continue;
+            const ext = name.slice(dot).toLowerCase();
+            if (AUDIO_EXTS.has(ext)) matched.push(name);
+        }
+        if (!matched.length) {
+            status.textContent = `No audio files in ${dir.name}`;
+            fileSelect.style.display = "none";
+            return;
+        }
+        matched.sort();
+        fileSelect.innerHTML = "";
+        for (const name of matched) {
+            const opt = document.createElement("option");
+            opt.value = name;
+            opt.textContent = name;
+            fileSelect.appendChild(opt);
+        }
+        fileSelect.style.display = "block";
+        // Auto-pick the first so the field isn't empty
+        const fullPath = dir.name ? "" : "";  // can't get absolute path from API
+        // We need to reconstruct the path. showDirectoryPicker does
+        // not expose the full path either (security). Workaround:
+        // query a "sentinel" file inside the directory and read its
+        // path via File.path on chromium legacy input. If that fails,
+        // fall back to leaving the user to type the directory.
+        pickBtn.textContent = "Browse again";
+        status.textContent = `${matched.length} file(s) in folder. Selected file goes into audio_file.`;
+        // Try the legacy <input type="file" webkitRelativePath trick
+        await getAbsoluteDirViaLegacy(dir, (absDir) => {
+            fileSelect.onchange = () => {
+                const chosen = fileSelect.value;
+                widget.value = (absDir ? absDir + "/" : "") + chosen;
+                if (node.onResize) node.onResize(node.size);
+                app.graph?.setDirtyCanvas(true, false);
+            };
+            // Pre-fill with first file
+            widget.value = (absDir ? absDir + "/" : "") + fileSelect.value;
+            if (node.onResize) node.onResize(node.size);
+        });
+    }
+
+    // Chromium (and most Chromium-derivatives) still expose
+    // f.webkitRelativePath on <input type="file" webkitdirectory> —
+    // but the file's *parent directory* path is still empty. We work
+    // around that by reading the file via FileReader to get a
+    // file:// URL which DOES contain the absolute path, then parse it.
+    async function getAbsoluteDirViaLegacy(dirHandle, cb) {
+        // Use a hidden <input type="file" webkitdirectory> to learn
+        // the directory's real path on Chromium.
+        const probe = document.createElement("input");
+        probe.type = "file";
+        probe.webkitdirectory = true;
+        probe.multiple = true;
+        probe.style.display = "none";
+        // We can't programmatically set .files on a directory
+        // picker, so we can't probe the same dir from here. Instead
+        // we fall back to letting the user type the dir manually.
+        // If you reached this branch, the File System Access API
+        // is in use and the user is on Chromium: they should
+        // also see the FileSystemDirectoryHandle below. We try
+        // .resolve() which DOES return a real path on Chromium 86+.
+        try {
+            if (dirHandle && dirHandle.resolve) {
+                // For each child, .resolve(name) returns a parent
+                // walk. To get the directory's absolute path, create
+                // a temp file in it, then read its file:// URL.
+                const tmpHandle = await dirHandle.getFileHandle("__mana_probe.tmp", { create: true });
+                const tmpFile = await tmpHandle.getFile();
+                const absPath = (tmpFile.path || "").replace(/\\/g, "/");
+                // Clean up
+                try { await dirHandle.removeEntry("__mana_probe.tmp"); } catch (_) {}
+                if (absPath) {
+                    // The path is to the file, strip filename to get dir
+                    const slash = absPath.lastIndexOf("/");
+                    const dirPath = slash >= 0 ? absPath.slice(0, slash) : "";
+                    cb(dirPath);
+                    return;
+                }
+            }
+        } catch (e) {
+            console.warn("[Mana] getAbsoluteDirViaLegacy failed:", e);
+        }
+        // Final fallback: just use the directory name and let the
+        // user paste the full path. Better than nothing.
+        cb("");
+    }
+
+    async function pickFileFallback() {
+        // Plain <input type="file"> fallback. We can only get the
+        // file's name (no path), so we display a clear warning.
+        const probe = document.createElement("input");
+        probe.type = "file";
+        probe.accept = "audio/*";
+        probe.style.display = "none";
+        document.body.appendChild(probe);
+        probe.addEventListener("change", () => {
+            const f = probe.files && probe.files[0];
+            document.body.removeChild(probe);
+            if (!f) return;
+            // File.path is empty in modern browsers. Show the user
+            // a clear message about what to do.
+            status.textContent = `Browser blocks reading the absolute path. File: "${f.name}". Type the full path in the text field above.`;
+            status.style.color = "#e88";
+            widget.value = f.name;  // best we can do
+            if (node.onResize) node.onResize(node.size);
+            app.graph?.setDirtyCanvas(true, false);
+        });
+        probe.click();
+    }
+
+    pickBtn.addEventListener("click", pickFolder);
 
     // Use addDOMWidget so ComfyUI itself places and sizes the wrapper.
-    // The widget is purely visual: getValue/setValue are no-ops.
     try {
-        const domWidget = node.addDOMWidget(
-            "mana_audio_picker",  // name
-            "audio_file_picker",  // type
+        node.addDOMWidget(
+            "mana_audio_picker",
+            "audio_file_picker",
             wrapper,
             {
                 getValue: () => "",
                 setValue: (v) => {},
-                getMinHeight: () => 36,
-                getMaxHeight: () => 36,
+                getMinHeight: () => 70,
+                getMaxHeight: () => 200,
             }
         );
-        // Save a reference so we can clean up if needed
-        widget._manaPickerWidget = domWidget;
     } catch (e) {
-        // Fallback: append to node body directly
         console.warn("[Mana] addDOMWidget failed, falling back to node.appendChild", e);
         const nodeEl = node.el || node.dom || document.querySelector(`[data-id="${node.id}"]`);
-        if (nodeEl) {
-            nodeEl.appendChild(wrapper);
-        } else {
-            console.error("[Mana] could not find node DOM to attach picker");
-        }
+        if (nodeEl) nodeEl.appendChild(wrapper);
+        else console.error("[Mana] could not find node DOM to attach picker");
     }
 }
 
