@@ -69,22 +69,31 @@ app.registerExtension({
             if (!modelWidget || !spellWidget) return;
 
             // Language badge so the user can see which language the
-            // currently-selected model covers.
+            // currently-selected model covers. The badge stretches
+            // the full node width and is tall enough to fit two
+            // lines of text — long names like "Multilingual 1000+"
+            // or "Chinese (中文)" can wrap on narrow nodes without
+            // getting clipped.
             const badge = document.createElement("div");
             badge.style.cssText = [
-                "padding: 4px 8px",
+                "box-sizing: border-box",
+                "width: 100%",
+                "padding: 6px 10px",
                 "margin: 4px 0",
                 "background: #1f3a5f",
                 "color: #d4e4ff",
                 "border: 1px solid #3d5a8c",
                 "border-radius: 4px",
                 "font-size: 12px",
+                "line-height: 1.4",
                 "text-align: center",
+                "word-wrap: break-word",
+                "overflow-wrap: anywhere",
             ].join(";");
             try {
                 this.addDOMWidget("model_language_badge", "text", badge, {
-                    getMinHeight: () => 32,
-                    getMaxHeight: () => 32,
+                    getMinHeight: () => 36,
+                    getMaxHeight: () => 80,
                 });
             } catch (e) {
                 console.warn("[Mana] addDOMWidget for badge failed", e);
