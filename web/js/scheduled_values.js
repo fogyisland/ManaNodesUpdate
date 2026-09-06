@@ -1,5 +1,45 @@
 import { app } from "../../../scripts/app.js";
 
+// --------------------------------------------------------------------------- #
+// i18n                                                                        #
+// --------------------------------------------------------------------------- //
+// Detect the browser language once and serve UI strings in either English or
+// Chinese. Adding a new language is just adding an entry to the `STRINGS`
+// table below — every label, button, and tooltip flows through `t()`.
+const _browserLang = (navigator.language || "en").toLowerCase();
+const _useChinese = _browserLang.startsWith("zh");
+
+const STRINGS = {
+    en: {
+        generateButton: "Generate Values",
+        deleteButton: "Delete Generated",
+        keyframeBadge: (x, y) => `frame: ${x}, value: ${y}`,
+        frameLabel: "frame: ",
+        valueLabel: "value: ",
+        axisX: "frames",
+        axisY: "values",
+        tooltipTitle: "scheduled value",
+        tooltipLabel: (label, y) => `frame = ${label}, value = ${y}`,
+    },
+    zh: {
+        generateButton: "生成数值",
+        deleteButton: "删除生成的",
+        keyframeBadge: (x, y) => `帧: ${x}, 数值: ${y}`,
+        frameLabel: "帧: ",
+        valueLabel: "数值: ",
+        axisX: "帧",
+        axisY: "数值",
+        tooltipTitle: "调度值",
+        tooltipLabel: (label, y) => `帧 = ${label}, 数值 = ${y}`,
+    },
+};
+
+function t(key, ...args) {
+    const dict = _useChinese ? STRINGS.zh : STRINGS.en;
+    const v = dict[key];
+    return typeof v === "function" ? v(...args) : v;
+}
+
 // Lazy-load Chart.js + zoom plugin + Bootstrap icons. The originals hit
 // remote CDNs synchronously, which (a) breaks offline / firewalled installs
 // and (b) loads incompatible plugin versions. We pin to versions known to
@@ -143,7 +183,7 @@ class TimelineWidget {
     
         // Create and append the generate button
         this.generateButton = document.createElement('button');
-        this.generateButton.innerText = 'Generate Values';
+        this.generateButton.innerText = t("generateButton");
         this.generateButton.classList.add(...commonClassList, 'btn-secondary');        
         this.generateButton.style.height = commonHeight;
         this.generateButton.style.flex = '1'; // Add this line
@@ -156,7 +196,7 @@ class TimelineWidget {
     
         // Create and append the delete button
         this.deleteButton = document.createElement('button');
-        this.deleteButton.innerText = 'Delete Generated';
+        this.deleteButton.innerText = t("deleteButton");
         this.deleteButton.classList.add(...commonClassList, 'btn-danger');
         this.deleteButton.style.height = commonHeight;
         this.deleteButton.style.flex = '1'; // Add this line
@@ -191,7 +231,7 @@ class TimelineWidget {
             badge.style.paddingLeft = '15px';
             badge.style.paddingRight = '-15px';
             badge.style.color = '#999999';       
-            badge.innerHTML = `frame: ${kf.x}, value: ${kf.y}`;
+            badge.innerHTML = t("keyframeBadge", kf.x, kf.y);
             badge.style.backgroundColor = '#222222';
             badge.style.display = 'flex'; // Add this line
             badge.style.justifyContent = 'center'; // Add this line
@@ -229,7 +269,7 @@ class TimelineWidget {
 
                 // Create labels and input fields for the frame and value
                 let frameLabel = document.createElement('span');
-                frameLabel.innerText = 'frame: ';
+                frameLabel.innerText = t("frameLabel");
 
                 let frameInput = document.createElement('input');
                 frameInput.type = 'text';
@@ -239,7 +279,7 @@ class TimelineWidget {
 
 
                 let valueLabel = document.createElement('span');
-                valueLabel.innerText = 'value: ';
+                valueLabel.innerText = t("valueLabel");
 
                 let valueInput = document.createElement('input');
                 valueInput.type = 'text';
@@ -286,7 +326,7 @@ class TimelineWidget {
                     badge.dataset.value = newValue;
 
                     // Replace the input fields and save button with the new frame and value
-                    badge.innerHTML = `frame: ${newFrame}, value: ${newValue}`;
+                    badge.innerHTML = t("keyframeBadge", newFrame, newValue);
 
                     // Append the edit and delete buttons after updating the badge's innerHTML
                     badge.appendChild(editButton);
@@ -603,7 +643,7 @@ class TimelineWidget {
                         },
                         title: {
                             display: true,
-                            text: 'frames' // Replace with your x-axis label
+                            text: t("axisX") // X-axis label
                         }
                     },
                     y: {
@@ -621,20 +661,20 @@ class TimelineWidget {
                         },
                         title: {
                             display: true,
-                            text: 'values'
+                            text: t("axisY")
                         },
                     }
                 },
                 plugins: {
                     tooltip: {
-                        enabled: true, 
+                        enabled: true,
                         callbacks: {
                             label: function(context) {
-                                return `frame = ${context.label}, value = ${context.parsed.y}`;
+                                return t("tooltipLabel", context.label, context.parsed.y);
                             },
                             title: function() {
-                                return 'scheduled value'; // Replace with your desired title
-                            }                        
+                                return t("tooltipTitle");
+                            }
                         }
                     },
                     zoom: {
