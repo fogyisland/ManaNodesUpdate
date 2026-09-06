@@ -4,6 +4,8 @@ import folder_paths
 
 class string2file:
 
+    DESCRIPTION = "Mana Nodes — save/preview text. Writes a STRING to a .txt file and shows an inline preview. Try searching: mana, text, string, save, file, txt, write."
+
     def __init__(self):
         pass
 

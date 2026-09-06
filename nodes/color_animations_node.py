@@ -33,6 +33,8 @@ _BLACK = ((0, 0, 0),)
 class color_animations:
     """Animate a hand-picked RGB palette across N frames."""
 
+    DESCRIPTION = "Mana Nodes — preset color animations. Cycle through rainbow, sunset, sky, ocean, etc. Try searching: mana, color, palette, rainbow, gradient."
+
     CATEGORY = "💠 Mana Nodes/📅 Value Scheduling"
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("scheduled_colors",)

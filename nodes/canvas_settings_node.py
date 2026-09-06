@@ -1,5 +1,7 @@
 class canvas_settings:
 
+    DESCRIPTION = "Mana Nodes — canvas properties. Output dimensions, background color/image, padding, alignment. Try searching: mana, canvas, background, image size."
+
     def __init__(self):
         pass
 

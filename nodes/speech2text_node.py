@@ -48,6 +48,8 @@ def _load_wav2vec2(model_id: str) -> tuple:
 class speech2text:
     """Speech recognition node (wav2vec2 + optional spell correction)."""
 
+    DESCRIPTION = "Mana Nodes — speech recognition. wav2vec2 transcription with spell correction and caption-line formatting. Try searching: mana, speech, transcribe, whisper, wav2vec, stt, asr, caption."
+
     CATEGORY = "💠 Mana Nodes"
     RETURN_TYPES = ("TRANSCRIPTION", "STRING", "STRING", "STRING")
     RETURN_NAMES = ("transcription", "raw_string", "framestamps_string", "timestamps_string")

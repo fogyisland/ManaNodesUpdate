@@ -1,5 +1,7 @@
 class scheduled_values:
 
+    DESCRIPTION = "Mana Nodes — scheduled values. Interactive keyframe chart for animating any Font Properties widget. Try searching: mana, animation, keyframe, timeline, chart."
+
     def __init__(self):
         pass
 

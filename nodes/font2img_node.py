@@ -15,6 +15,12 @@ from ..helpers.animation import (
 
 class font2img:
 
+    # ComfyUI's node-search box does a substring match against the
+    # class description, so we list synonyms + the package name here
+    # to make the node discoverable when the user types things like
+    # "mana", "caption", "subtitle", "typography", or "text to image".
+    DESCRIPTION = "Mana Nodes — text to image generator. Renders animated captions, subtitles, and typography. Try searching: mana, caption, subtitle, typography."
+
     FONTS = {}
     FONT_NAMES = []
 

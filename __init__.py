@@ -37,4 +37,30 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "Preset Color Animations":"🌈 Preset Color Animations"
 }
 
-__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]
+# Search aliases let users find nodes by typing "mana" or "mana-nodes"
+# in the ComfyUI node-search box. Each entry maps an alias to a list
+# of node class names that should match.
+SEARCH_ALIASES = {
+    "mana": [k for k in NODE_CLASS_MAPPINGS],
+    "mana-nodes": [k for k in NODE_CLASS_MAPPINGS],
+    "mana_nodes": [k for k in NODE_CLASS_MAPPINGS],
+    "mananodes": [k for k in NODE_CLASS_MAPPINGS],
+    "mananode": [k for k in NODE_CLASS_MAPPINGS],
+    "caption": ["Text to Image Generator", "Speech Recognition", "Font Properties", "Canvas Properties"],
+    "subtitle": ["Text to Image Generator", "Speech Recognition"],
+    "typography": ["Font Properties", "Text to Image Generator", "Canvas Properties"],
+    "speech": ["Speech Recognition", "Generate Audio"],
+    "transcribe": ["Speech Recognition"],
+    "tts": ["Generate Audio"],
+    "video": ["Split Video", "Combine Video"],
+    "frames": ["Split Video", "Text to Image Generator"],
+    "animation": ["Scheduled Values", "Preset Color Animations"],
+    "color-anim": ["Preset Color Animations"],
+}
+
+__all__ = [
+    "NODE_CLASS_MAPPINGS",
+    "NODE_DISPLAY_NAME_MAPPINGS",
+    "SEARCH_ALIASES",
+    "WEB_DIRECTORY",
+]
