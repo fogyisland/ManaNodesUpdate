@@ -104,10 +104,17 @@ TRANSCRIPTION_MODES: tuple[str, ...] = ("word", "line", "fill")
 
 @functools.lru_cache(maxsize=4)
 def _load_wav2vec2(model_id: str) -> tuple:
-    """Cache (model, processor) so we don't re-download GBs of weights per call."""
+    """Cache (model, processor) so we don't re-download GBs of weights per call.
+
+    Weights are stored under <ComfyUI>/models/Mana/ (see
+    helpers.models.MANA_MODELS_DIR). The user can pre-place the
+    HuggingFace cache structure there manually to skip the download.
+    """
+    from ..helpers.models import ensure_mana_models_dir
+    cache_dir = ensure_mana_models_dir()
     return (
-        Wav2Vec2ForCTC.from_pretrained(model_id),
-        Wav2Vec2Processor.from_pretrained(model_id),
+        Wav2Vec2ForCTC.from_pretrained(model_id, cache_dir=cache_dir),
+        Wav2Vec2Processor.from_pretrained(model_id, cache_dir=cache_dir),
     )
 
 
@@ -202,12 +209,13 @@ class speech2text:
         # Diagnostic info — printed once per run. Helps the user
         # figure out *why* they got 0 words: silent input, too-short
         # input, or all-NaN model output.
+        from ..helpers.models import MANA_MODELS_DIR
         duration_s = len(audio_array) / 16_000
         peak = float(abs(audio_array).max()) if len(audio_array) else 0.0
         rms = float(np.sqrt(np.mean(audio_array.astype(np.float32) ** 2))) if len(audio_array) else 0.0
         logger().info(
-            "Speech recognition input: %d samples (%.2fs @ 16kHz), peak=%.3f, rms=%.4f, model=%s",
-            len(audio_array), duration_s, peak, rms, model_id,
+            "Speech recognition input: %d samples (%.2fs @ 16kHz), peak=%.3f, rms=%.4f, model=%s, cache_dir=%s",
+            len(audio_array), duration_s, peak, rms, model_id, MANA_MODELS_DIR,
         )
 
         if not math.isfinite(peak) or peak < 1e-6:
