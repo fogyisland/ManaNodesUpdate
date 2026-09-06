@@ -621,7 +621,8 @@ class font2img:
                         try:
                             pil_image = transform(tensor_image)
                         except Exception as e:
-                            print("Error during conversion:", e)
+                            from ..helpers.logger import logger
+                            logger().error("Tensor to PIL conversion failed: %s", e)
                             raise
 
                         processed_images.append(pil_image.resize((image_width, image_height), Image.LANCZOS))

@@ -8,10 +8,6 @@ from .nodes.canvas_settings_node import canvas_settings
 from .nodes.scheduled_values_node import scheduled_values
 from .nodes.color_animations_node import color_animations
 from .nodes.text_graphic_element_node import text_graphic_element
-from .helpers.logger import logger
-
-my_logger = logger()
-my_logger.error("Mana Web")
 
 WEB_DIRECTORY = "./web"
 

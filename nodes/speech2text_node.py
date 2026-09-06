@@ -158,7 +158,8 @@ def _spell_correct(words: list[tuple[str, float, float]], language: str):
         from spellchecker import SpellChecker
         spell = SpellChecker(language=LANGUAGE_TO_ISO.get(language, "en"))
     except ImportError:
-        print("[Mana] SpellChecker not installed; skipping spell correction.")
+        from ..helpers.logger import logger
+        logger().info("SpellChecker not installed; skipping spell correction.")
         return words
     return [
         ((spell.correction(w) or w).upper(), s, e)
