@@ -1,6 +1,7 @@
 import functools
 import json
 import os
+import threading
 
 import librosa
 import numpy as np
@@ -134,12 +135,47 @@ def _load_wav2vec2(model_id: str) -> tuple:
             cache_dir, model_id, model_id, snapshot_dir,
         )
 
+    # Periodic progress reporter so the user sees that the node is
+    # alive while transformers is downloading. Without this the green
+    # execution bar just sits there for 1-5 minutes on a 1.2 GB
+    # model with no indication of what's happening.
+    stop_flag = threading.Event()
+
+    def _reporter():
+        last_log = 0.0
+        while not stop_flag.is_set():
+            time.sleep(2.0)
+            from time import time as _now
+            now = _now()
+            if now - last_log < 5.0:
+                continue
+            last_log = now
+            logger().info(
+                "Speech recognition: still loading %s (this can take "
+                "1-5 minutes on first run; ~1.2 GB). Cache: %s",
+                model_id, cache_dir,
+            )
+
+    reporter = threading.Thread(target=_reporter, daemon=True)
+    from time import time as _t
+    started = _t()
+    reporter.start()
+
     try:
-        return (
+        result = (
             Wav2Vec2ForCTC.from_pretrained(model_id, cache_dir=cache_dir),
             Wav2Vec2Processor.from_pretrained(model_id, cache_dir=cache_dir),
         )
+        stop_flag.set()
+        from time import time as _t2
+        elapsed = _t2() - started
+        logger().info(
+            "Speech recognition: loaded %s in %.1fs (cache: %s)",
+            model_id, elapsed, cache_dir,
+        )
+        return result
     except Exception as e:
+        stop_flag.set()
         # Network failure, firewall, missing local cache, etc. Print
         # a clear error pointing the user at the exact HuggingFace
         # URL and the local path to drop the weights into. Without

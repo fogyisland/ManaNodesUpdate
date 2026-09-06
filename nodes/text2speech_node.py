@@ -1,4 +1,6 @@
 import functools
+import threading
+from time import time as _time
 from transformers import pipeline
 import scipy.io.wavfile
 from pathlib import Path
@@ -25,9 +27,41 @@ def _get_bark_pipeline():
     """
     from ..helpers.logger import logger
     cache_dir = get_feature_models_dir("TextToSpeech")
+
+    # Periodic progress reporter so the user sees the node is alive
+    # while transformers is downloading. Without this the green
+    # execution bar just sits there for 5-10 minutes on a 5 GB
+    # model with no indication of what's happening.
+    stop_flag = threading.Event()
+
+    def _reporter():
+        last_log = 0.0
+        while not stop_flag.is_set():
+            threading.Event().wait(2.0)
+            now = _time()
+            if now - last_log < 5.0:
+                continue
+            last_log = now
+            logger().info(
+                "Generate Audio: still loading Bark (this can take "
+                "5-10 minutes on first run; ~5 GB). Cache: %s",
+                cache_dir,
+            )
+
+    reporter = threading.Thread(target=_reporter, daemon=True)
+    started = _time()
+    reporter.start()
+
     try:
-        return pipeline("text-to-speech", BARK_MODEL_ID, cache_dir=cache_dir)
+        result = pipeline("text-to-speech", BARK_MODEL_ID, cache_dir=cache_dir)
+        stop_flag.set()
+        logger().info(
+            "Generate Audio: loaded Bark in %.1fs (cache: %s)",
+            _time() - started, cache_dir,
+        )
+        return result
     except Exception as e:
+        stop_flag.set()
         # Same playbook as wav2vec2: give the user the exact URL +
         # exact local path so they can fix it without grepping docs.
         snapshot_dir = f"{cache_dir}{os.sep}models--suno--bark{os.sep}snapshots{os.sep}<hash>"
