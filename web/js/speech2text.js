@@ -172,22 +172,26 @@ app.registerExtension({
 // ---------------------------------------------------------------------------
 function addAudioFilePicker(node) {
     const widget = node.widgets.find((w) => w.name === "audio_file");
-    if (!widget) return;
-    if (widget.element && widget.element.dataset.manaPickerAttached === "1") return;
+    if (!widget) {
+        console.warn("[Mana] audio_file widget not found on node", node.comfyClass);
+        return;
+    }
+    if (widget.element && widget.element.dataset?.manaPickerAttached === "1") return;
 
     // Build a small button styled to match ComfyUI's widget look.
     const btn = document.createElement("button");
-    btn.textContent = "Browse audio file";
+    btn.textContent = "📁 Browse audio file";
     btn.title = "Open a native file picker to select an audio file";
     btn.style.cssText = [
-        "margin-left: 6px",
-        "padding: 4px 10px",
+        "margin-top: 4px",
+        "padding: 6px 12px",
         "background: #2a3a4f",
         "color: #d4e4ff",
         "border: 1px solid #3d5a8c",
         "border-radius: 4px",
         "font-size: 12px",
         "cursor: pointer",
+        "width: 100%",
     ].join(";");
     btn.onmouseenter = () => { btn.style.background = "#3a4a5f"; };
     btn.onmouseleave = () => { btn.style.background = "#2a3a4f"; };
@@ -201,9 +205,8 @@ function addAudioFilePicker(node) {
     fileInput.addEventListener("change", () => {
         const f = fileInput.files && fileInput.files[0];
         if (!f) return;
-        // ComfyUI lives on Windows / Linux / Mac. On Win we want
-        // backslashes; elsewhere forward slashes. File.path on the
-        // input element is the cleanest cross-platform answer.
+        // Cross-platform path: File.path on Chromium-based browsers,
+        // fall back to name for older browsers.
         const path = (f.path || f.name).replace(/\\/g, "/");
         widget.value = path;
         // Force a redraw so the new value is visible.
@@ -213,24 +216,45 @@ function addAudioFilePicker(node) {
 
     btn.addEventListener("click", () => fileInput.click());
 
-    // Place the button next to the widget's input element.
-    const host = widget.element || widget.inputEl?.parentElement;
+    // Decide where to put the button. ComfyUI's widget DOM varies by
+    // version: newer versions wrap the input in `widget.element`,
+    // older ones have only `widget.inputEl`. Try the wrapper first,
+    // then the input's parent, then the widget's row container.
+    let host = widget.element || widget.inputEl?.parentElement;
     if (host) {
-        host.style.display = "flex";
-        host.style.alignItems = "center";
+        // Append the button to the same container as the input.
         host.appendChild(btn);
         host.appendChild(fileInput);
-        host.dataset.manaPickerAttached = "1";
+    } else {
+        // Last resort: insert directly after the input on the node.
+        if (widget.inputEl && widget.inputEl.parentNode) {
+            widget.inputEl.parentNode.insertBefore(btn, widget.inputEl.nextSibling);
+            widget.inputEl.parentNode.insertBefore(fileInput, btn.nextSibling);
+        } else {
+            console.warn("[Mana] could not find DOM host for audio_file picker on", node.comfyClass);
+            return;
+        }
     }
+    if (host?.dataset) host.dataset.manaPickerAttached = "1";
 }
 
 // Register the picker on every Speech Recognition node that's added.
+//
+// We hook into `onNodeCreated` via chainCallback so we run AFTER the
+// node has finished its own setup (widgets attached, DOM mounted).
+// Using a separate registerExtension with `nodeCreated` had timing
+// issues where widget.element was still null on first call.
 app.registerExtension({
     name: "ManaNodes.speech2text.filepicker",
-    nodeCreated(node) {
-        if (node.comfyClass !== "Speech Recognition") return;
-        // Defer to next tick so ComfyUI has finished mounting the
-        // widget DOM; otherwise widget.element might be null.
-        setTimeout(() => addAudioFilePicker(node), 0);
+    async beforeRegisterNodeDef(nodeType, nodeData, app) {
+        if (nodeData.name !== "Speech Recognition") return;
+        chainCallback(nodeType.prototype, "onNodeCreated", function () {
+            // Two RAFs: one for the widget to attach, one for the
+            // surrounding DOM to settle. Without this the file input
+            // can land in the wrong place.
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                addAudioFilePicker(this);
+            }));
+        });
     },
 });
