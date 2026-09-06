@@ -129,14 +129,16 @@ class speech2text:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                # `audio_file` is an AUDIO connection point. Wire it
-                # from ComfyUI's built-in LoadAudio node (or any
-                # other node that outputs AUDIO, e.g. VHS_LoadAudio).
-                # The node does NOT take a string path directly —
-                # save the file to ComfyUI/input/audio/ and select
-                # it in LoadAudio, or use VHS_LoadAudioPath which
-                # accepts a path string and outputs an AUDIO dict.
-                "audio_file": ("AUDIO",),
+                # `audio_file` accepts BOTH shapes so the user has
+                # a fallback path when LoadAudio doesn't connect:
+                #   - AUDIO dict from LoadAudio / VHS_LoadAudio
+                #     ({"waveform": Tensor, "sample_rate": int})
+                #   - STRING (file path or http(s) URL)
+                # Pick the right input in the UI, or type a path.
+                "audio_file": (("AUDIO", "STRING"), {
+                    "display": "text",
+                    "placeholder": "Connect AUDIO output or type a path/URL",
+                }),
                 "wav2vec2_model": (DEFAULT_WAV2VEC2_MODELS, {"display": "dropdown", "default": DEFAULT_WAV2VEC2_MODELS[0]}),
                 "spell_check_language": (SPELL_CHECK_LANGUAGES, {"default": "English", "display": "dropdown"}),  # default set later based on wav2vec2 model selection
                 "framestamps_max_chars": ("INT", {"default": 40, "step": 1, "display": "number"}),
