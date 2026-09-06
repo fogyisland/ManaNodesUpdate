@@ -1,7 +1,9 @@
 import functools
 import json
+import os
 
 import librosa
+import numpy as np
 import torch
 from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
 
@@ -87,7 +89,16 @@ class speech2text:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "audio_file": ("STRING", {"display": "text", "forceInput": True}),
+                # The audio_file input accepts EITHER:
+                #   - a STRING (file path or URL) — typed in or wired
+                #     from a custom upstream that produces a path
+                #   - an AUDIO dict from ComfyUI's built-in LoadAudio
+                #     node ({"waveform": Tensor[N,1,L], "sample_rate": int})
+                # The _load_audio helper detects which one came in and
+                # handles both. This is the single most common confusion
+                # when wiring up the pipeline, so we accept both shapes
+                # rather than forcing the user to add a converter.
+                "audio_file": (("AUDIO", "STRING"), {"display": "text"}),
                 "wav2vec2_model": (DEFAULT_WAV2VEC2_MODELS, {"display": "dropdown", "default": DEFAULT_WAV2VEC2_MODELS[0]}),
                 "spell_check_language": (SPELL_CHECK_LANGUAGES, {"default": "English", "display": "dropdown"}),
                 "framestamps_max_chars": ("INT", {"default": 25, "step": 1, "display": "number"}),
@@ -130,12 +141,82 @@ class speech2text:
 # --------------------------------------------------------------------------- #
 # Helpers                                                                     #
 # --------------------------------------------------------------------------- #
-def _load_audio(file_path: str, sr: int = 16_000):
+def _load_audio(source, sr: int = 16_000):
+    """Load an audio waveform as a 1-D numpy array at `sr` Hz.
+
+    Accepts three input shapes so the user can wire this node however
+    they want:
+
+      1. STRING — local file path. Passed straight to librosa.load.
+      2. STRING — http(s)://... URL. Downloaded to a temp file, then
+         read with librosa.load.
+      3. dict with a "waveform" key (ComfyUI's AUDIO type, e.g. from
+         LoadAudio). The waveform is a torch tensor of shape
+         (channels, samples); we take channel 0 and trust the dict's
+         sample_rate.
+    """
+    # Case 3: AUDIO dict from LoadAudio / VHS_AudioLoader / etc.
+    if isinstance(source, dict) and "waveform" in source:
+        waveform = source["waveform"]
+        # waveform is (channels, samples) or (1, samples) or (samples,)
+        if hasattr(waveform, "detach"):  # torch tensor
+            arr = waveform.detach().cpu().float().numpy()
+        else:
+            arr = np.asarray(waveform, dtype=np.float32)
+        if arr.ndim == 2:
+            arr = arr[0]  # take first channel
+        # Resample if needed (librosa doesn't take numpy — we use scipy)
+        src_sr = int(source.get("sample_rate", sr))
+        if src_sr != sr:
+            arr = _resample_numpy(arr, src_sr, sr)
+        return arr.astype(np.float32)
+
+    # Cases 1 & 2: STRING (file path or URL)
+    if not isinstance(source, str):
+        raise ValueError(
+            f"audio_file must be a STRING (path/URL) or an AUDIO dict; "
+            f"got {type(source).__name__}: {source!r}"
+        )
+
+    if source.startswith(("http://", "https://")):
+        # Download to a temp file, then load.
+        import tempfile
+        import requests as _requests
+        with tempfile.NamedTemporaryFile(suffix=".audio", delete=False) as tmp:
+            resp = _requests.get(source, stream=True, timeout=60)
+            resp.raise_for_status()
+            for chunk in resp.iter_content(chunk_size=1 << 16):
+                if chunk:
+                    tmp.write(chunk)
+            tmp_path = tmp.name
+        try:
+            audio, _ = librosa.load(tmp_path, sr=sr)
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        return audio
+
+    # Local file path
     try:
-        audio, _ = librosa.load(file_path, sr=sr)
+        audio, _ = librosa.load(source, sr=sr)
         return audio
     except Exception as exc:
-        raise ValueError(f"Could not load audio file: {file_path}") from exc
+        raise ValueError(f"Could not load audio file: {source}") from exc
+
+
+def _resample_numpy(arr: np.ndarray, src_sr: int, dst_sr: int) -> np.ndarray:
+    """Minimal resampler for already-decoded numpy audio.
+
+    Avoids pulling in torchaudio just for the resample step.
+    """
+    from scipy.signal import resample
+    if src_sr == dst_sr:
+        return arr
+    n_src = len(arr)
+    n_dst = int(round(n_src * dst_sr / src_sr))
+    return resample(arr, n_dst).astype(np.float32)
 
 
 def _token_timestamps(predicted_ids: torch.Tensor, processor) -> list[tuple[str, float]]:
