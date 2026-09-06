@@ -111,8 +111,24 @@ def _load_wav2vec2(model_id: str) -> tuple:
     pre-place the HuggingFace cache structure there manually to
     skip the download.
     """
-    from ..helpers.models import get_feature_models_dir
+    from ..helpers.models import get_feature_models_dir, list_cached_models
+    from ..helpers.logger import logger
     cache_dir = get_feature_models_dir("SpeechRecognition")
+
+    # First-call diagnostic: list what we already have on disk so
+    # the user can verify their manual download landed in the right
+    # place. Only printed the very first time this runs (the lru_cache
+    # means the actual download happens at most once per model_id).
+    existing = list_cached_models("SpeechRecognition")
+    if not existing:
+        logger().info(
+            "Mana models dir %s is empty; %s will be downloaded on "
+            "first use. To skip the download, place the HuggingFace "
+            "cache (models--<org>--<name>/snapshots/<hash>/...) in "
+            "this directory before running.",
+            cache_dir, model_id,
+        )
+
     return (
         Wav2Vec2ForCTC.from_pretrained(model_id, cache_dir=cache_dir),
         Wav2Vec2Processor.from_pretrained(model_id, cache_dir=cache_dir),

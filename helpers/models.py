@@ -89,3 +89,52 @@ def ensure_mana_models_dir() -> str:
     """
     os.makedirs(MANA_MODELS_DIR, exist_ok=True)
     return MANA_MODELS_DIR
+
+
+def list_cached_models(feature: str | None = None) -> list[str]:
+    """Return paths of model snapshots currently on disk.
+
+    If `feature` is given, only that feature's directory is scanned.
+    Returns the absolute path of every `snapshots/<hash>/` directory,
+    which is what HuggingFace's from_pretrained() looks for. The
+    user can use this to verify a manually-downloaded model landed
+    in the right place.
+    """
+    base = (os.path.join(MANA_MODELS_DIR, feature)
+            if feature else MANA_MODELS_DIR)
+    if not os.path.isdir(base):
+        return []
+    found: list[str] = []
+    for repo in os.listdir(base):
+        repo_path = os.path.join(base, repo)
+        snaps = os.path.join(repo_path, "snapshots")
+        if not os.path.isdir(snaps):
+            continue
+        for hash_dir in os.listdir(snaps):
+            full = os.path.join(snaps, hash_dir)
+            if os.path.isdir(full) and os.listdir(full):
+                found.append(full)
+    return sorted(found)
+
+
+def report() -> str:
+    """Human-readable summary of where every feature's models live.
+
+    Useful as a sanity check after a fresh install or after a
+    manual model drop. Logs each feature directory and the models
+    currently cached under it.
+    """
+    from .logger import logger
+    lines = [f"Mana models root: {MANA_MODELS_DIR}"]
+    for feature in sorted(os.listdir(MANA_MODELS_DIR)) if os.path.isdir(MANA_MODELS_DIR) else []:
+        fdir = os.path.join(MANA_MODELS_DIR, feature)
+        cached = list_cached_models(feature)
+        if cached:
+            lines.append(f"  {feature}/  ({len(cached)} cached)")
+            for c in cached:
+                lines.append(f"    - {c}")
+        else:
+            lines.append(f"  {feature}/  (empty)")
+    report_text = "\n".join(lines)
+    logger().info("\n" + report_text)
+    return report_text
