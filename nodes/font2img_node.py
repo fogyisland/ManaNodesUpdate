@@ -72,9 +72,35 @@ class font2img:
         else:
             formatted_transcription = text
 
+        # Defensive: tell the user *why* they're getting blank frames.
+        # Without this, the silent failure (black video) is hard to
+        # diagnose. Common causes:
+        #   - Speech Recognition produced no text (audio silent /
+        #     wrong model for the language / audio too short)
+        #   - User typed "{}" as text but didn't connect transcription
+        if not text or not text.strip():
+            from ..helpers.logger import logger
+            if transcription is not None:
+                # Transcription was connected but produced no text.
+                # Most common cause: wav2vec2 model doesn't match the
+                # audio language, or the audio is silent / music.
+                logger().warning(
+                    "Text to Image: transcription was provided but "
+                    "produced 0 words. Check that the wav2vec2 model "
+                    "matches the audio language and the audio contains "
+                    "speech. Output will be blank frames."
+                )
+            else:
+                logger().warning(
+                    "Text to Image: text input is empty. Either type "
+                    "a string in the 'text' field or connect a Speech "
+                    "Recognition output to the 'transcription' input. "
+                    "Output will be blank frames."
+                )
+
         frame_text_dict, is_structured_input = self.parse_text_input(text, kwargs)
         frame_text_dict = self.cumulative_text(frame_text_dict, frame_count)
-        
+
         images = self.generate_images(frame_text_dict,images , kwargs)
         image_batch = torch.cat(images, dim=0)
 
