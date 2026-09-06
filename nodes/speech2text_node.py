@@ -2,6 +2,7 @@ import functools
 import json
 import os
 import threading
+import time
 
 import librosa
 import numpy as np
@@ -140,13 +141,13 @@ def _load_wav2vec2(model_id: str) -> tuple:
     # execution bar just sits there for 1-5 minutes on a 1.2 GB
     # model with no indication of what's happening.
     stop_flag = threading.Event()
+    started = time.time()
 
     def _reporter():
         last_log = 0.0
         while not stop_flag.is_set():
             time.sleep(2.0)
-            from time import time as _now
-            now = _now()
+            now = time.time()
             if now - last_log < 5.0:
                 continue
             last_log = now
@@ -157,8 +158,6 @@ def _load_wav2vec2(model_id: str) -> tuple:
             )
 
     reporter = threading.Thread(target=_reporter, daemon=True)
-    from time import time as _t
-    started = _t()
     reporter.start()
 
     try:
@@ -167,8 +166,7 @@ def _load_wav2vec2(model_id: str) -> tuple:
             Wav2Vec2Processor.from_pretrained(model_id, cache_dir=cache_dir),
         )
         stop_flag.set()
-        from time import time as _t2
-        elapsed = _t2() - started
+        elapsed = time.time() - started
         logger().info(
             "Speech recognition: loaded %s in %.1fs (cache: %s)",
             model_id, elapsed, cache_dir,
@@ -200,7 +198,7 @@ def _load_wav2vec2(model_id: str) -> tuple:
 class speech2text:
     """Speech recognition node (wav2vec2 + optional spell correction)."""
 
-    DESCRIPTION = "魔力节点 — 语音识别。支持中文、英文、日文、韩文等多语种 wav2vec2 转录 + 字幕格式化。试试搜索：mana、魔力、语音、转录、字幕、识别、中文、中文识别。**输入 audio_file 必须从 LoadAudio 节点接入**。 Mana Nodes — speech recognition. Multilingual wav2vec2 transcription (Chinese, English, Japanese, Korean + 9 more languages) with caption-line formatting. Try searching: mana, speech, transcribe, whisper, wav2vec, stt, asr, caption, chinese, 中文. **Connect audio_file from a LoadAudio node.**"
+    DESCRIPTION = "魔力节点 — 语音识别。支持中文、英文、日文、韩文等多语种 wav2vec2 转录 + 字幕格式化。试试搜索：mana、魔力、语音、转录、字幕、识别、中文、中文识别。**在 audio_file 文本框输入文件路径或 URL**。 Mana Nodes — speech recognition. Multilingual wav2vec2 transcription (Chinese, English, Japanese, Korean + 9 more languages) with caption-line formatting. Try searching: mana, speech, transcribe, whisper, wav2vec, stt, asr, caption, chinese, 中文. **Type a file path or URL into the audio_file text field.**"
 
     CATEGORY = "💠 Mana Nodes"
     RETURN_TYPES = ("TRANSCRIPTION", "STRING", "STRING", "STRING")
@@ -409,11 +407,32 @@ def _load_audio(source, sr: int = 16_000):
                 pass
         return audio
 
-    # Local file path
+    # Local file path. Check existence first so the user gets a
+    # clear error message instead of librosa's cryptic FileNotFound.
+    if not os.path.isfile(source):
+        from ..helpers.logger import logger
+        logger().error(
+            "audio_file path not found: %s\n"
+            "Check the file exists and the path is correct. "
+            "Use forward slashes (H:/audio/file.wav) or escaped "
+            "backslashes (H:\\\\audio\\\\file.wav) in the text field.",
+            source,
+        )
+        raise FileNotFoundError(f"audio_file path not found: {source}")
+
     try:
         audio, _ = librosa.load(source, sr=sr)
         return audio
     except Exception as exc:
+        from ..helpers.logger import logger
+        logger().error(
+            "librosa failed to load %s: %s\n"
+            "Most likely causes: (1) unsupported audio format — "
+            "convert with ffmpeg to 16kHz mono WAV; (2) ffmpeg not "
+            "installed — install it and ensure it's on PATH; (3) "
+            "corrupted file. Path: %s",
+            source, exc, source,
+        )
         raise ValueError(f"Could not load audio file: {source}") from exc
 
 
