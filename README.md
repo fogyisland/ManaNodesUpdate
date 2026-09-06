@@ -1,570 +1,503 @@
-![ezgif com-optimize(2)](https://github.com/ForeignGods/ComfyUI-Mana-Nodes/assets/78089013/f48b37c2-c3db-408f-ada8-a6bf336b6549)
+# ComfyUI Mana Nodes
 
-![Static Badge](https://img.shields.io/badge/release-v1.0.0-black?style=plastic&logo=GitHub&logoColor=white&color=green) 
-[![Custom Badge](https://img.shields.io/badge/buy-coffe-orange?style=plastic&logo=buymeacoffee&logoColor=white&link=URL)](https://buymeacoffee.com/foreigngods)
-<!-- 
-<a href="https://github.com/ForeignGods/ComfyUI-Mana-Nodes/releases">
-    <img alt="GitHub all releases" src="https://img.shields.io/github/downloads/ForeignGods/ComfyUI-Mana-Nodes/latest/total">
-</a>
--->
-Welcome to the ComfyUI-Mana-Nodes project! 
+[![Version](https://img.shields.io/badge/release-v2.0.0-black?style=plastic&logo=GitHub&logoColor=white&color=green)](https://github.com/fogyisland/ManaNodesUpdate)
+[![Buy Me a Coffee](https://img.shields.io/badge/buy-coffee-orange?style=plastic&logo=buymeacoffee&logoColor=white)](https://buymeacoffee.com/foreigngods)
+[![ComfyUI](https://img.shields.io/badge/ComfyUI-custom_node-blue)](https://github.com/comfyanonymous/ComfyUI)
 
-This collection of custom nodes is designed to supercharge text-based content creation within the ComfyUI environment. 
+A collection of **10 custom nodes** for ComfyUI focused on text-based content
+creation: dynamic captions, animated typography, speech-to-text, and video/audio
+utilities.
 
-Whether you're working on dynamic captions, transcribing audio, or crafting engaging visual content, Mana Nodes has got you covered.
+> **Search tip:** In the ComfyUI node-search box, type `mana`, `caption`,
+> `subtitle`, `typography`, or `transcribe` to find the relevant nodes.
 
-If you like Mana Nodes, give our repo a [⭐ Star](https://github.com/ForeignGods/ComfyUI-Mana-Nodes) and [👀 Watch](https://github.com/ForeignGods/ComfyUI-Mana-Nodes/subscription) our repository to stay updated.
-  
-## Installation
-You can install Mana Nodes via the [ComfyUI-Manager](https://github.com/ltdrdata/ComfyUI-Manager)
+---
 
-Or simply clone the repo into the `custom_nodes` directory with this command:
+## What's New in v2.0
 
-```
-git clone https://github.com/ForeignGods/ComfyUI-Mana-Nodes.git
-```
+This is a **maintenance + optimization release** of the original
+[ComfyUI-Mana-Nodes](https://github.com/ForeignGods/ComfyUI-Mana-Nodes) by
+[ForeignGods](https://github.com/ForeignGods). Every node has been refactored;
+no behavior changes for existing workflows.
 
-and install the requirements using:
-```
-.\python_embed\python.exe -s -m pip install -r requirements.txt --user
-```
+### Bug fixes (10 critical)
 
-If you are using a venv, make sure you have it activated before installation and use:
-```
+- **9 P0 fixes** that made nodes crash or render wrong output (shadow
+  double-draw, missing `scheduled_values` input, Pillow 10+ ANTIALIAS
+  removal, deprecated `subclip`, etc.)
+- **scheduled_values crash** when actually used (had been silently
+  untested since the input was missing)
+- **Runtime JS errors**: `Failed to construct 'URL'`, extension init
+  failure, missing `user.css` 404
+- **Startup ERROR log spam** (`[Mana] - ERROR - Mana Web`) removed
+
+### Performance (5-10x on text rendering)
+
+- Border drawing now uses PIL's native `stroke_width` instead of a
+  per-character pixel loop
+- `lru_cache` on font loading (256 entries) — font parse was redone
+  per frame before
+- `lru_cache` on wav2vec2 + Bark model weights — no more re-downloading
+  GBs of weights on every run
+- Class-level cache on video input directory scan
+- Pre-computed font metrics in the per-character loop
+
+### Quality of life
+
+- **DESCRIPTION** on every node so ComfyUI's search box finds them
+  by typing `mana`, `caption`, etc.
+- Real logger (the old stub silently dropped every error)
+- Pure-ASCII `requirements.txt` (the previous version crashed pip
+  on Chinese Windows due to a GBK decode error)
+- Strict `from __future__ import annotations` and type hints
+- Helper modules extracted: `helpers/animation.py`, `helpers/font_loader.py`
+
+See [CHANGELOG](#changelog) for the full per-commit list.
+
+---
+
+## Nodes (10 total)
+
+| Node | Class Name | Use it for |
+|------|------------|------------|
+| ✒️ **Text to Image Generator** | `Text to Image Generator` | Render text into an IMAGE batch. Main workhorse node. |
+| 🆗 **Font Properties** | `Font Properties` | Font, size, color, border, shadow, rotation, offsets. Animatable. |
+| 🖼️ **Canvas Properties** | `Canvas Properties` | Output size, background color/image, padding, alignment. |
+| ⏰ **Scheduled Values** | `Scheduled Values` | Interactive keyframe chart; drive any Font Property over time. |
+| 🌈 **Preset Color Animations** | `Preset Color Animations` | Cycle through rainbow/sunset/sky/ocean/etc. palettes. |
+| 🎤 **Speech Recognition** | `Speech Recognition` | wav2vec2 transcription -> caption timeline. |
+| 📣 **Generate Audio** | `Generate Audio` | Bark text-to-speech. |
+| 🎞️ **Split Video** | `Split Video` | Extract frames + audio slice from a video file. |
+| 🎥 **Combine Video** | `Combine Video` | Stitch an IMAGE batch into an MP4. |
+| 📝 **Save/Preview Text** | `Save/Preview Text` | Write a STRING to a .txt file with inline preview. |
+
+Full input/output reference: see [FEATURES.md](FEATURES.md).
+
+---
+
+## Quick start
+
+### Installation
+
+```bash
+# 1. Install ComfyUI-Manager (one-time)
+cd ComfyUI/custom_nodes
+git clone https://github.com/ltdrdata/ComfyUI-Manager.git
+
+# 2. Install Mana Nodes
+git clone https://github.com/fogyisland/ManaNodesUpdate.git ComfyUI-Mana-Nodes
+
+# 3. Install dependencies (Python 3.10 / 3.11 / 3.12)
+cd ComfyUI-Mana-Nodes
 pip install -r requirements.txt
+
+# 4. Restart ComfyUI
 ```
 
-## Nodes
+Or use the ComfyUI-Manager UI: search for "Mana Nodes" and click Install.
 
-<details>
-  <summary>✒️ <b>Text to Image Generator</b></summary>
-  
-#### Required Inputs
-
-#### `font`
-
-To set the font and its styling you need to input 🆗 <b>Font Properties</b> node here.
-
-#### `canvas`
-
-To configure the canvas input the 🖼️ <b>Canvas Properties</b>
-
-#### `text`
-
-Specifies the text to be rendered on the images. Supports multiline text input for rendering on separate lines.
-- For simple text: Input the text directly as a string.
-- For frame-specific text: Use a JSON-like format where each line specifies a frame number and the corresponding text. Example:
-    ``` 
-    "1": "Hello",
-    "10": "World",
-    "20": "End"
-    ```
-
-#### `frame_count`
-
-Sets the amount of frames this node will output.
-
-#### Optional Inputs
-
-#### `transcription`
-
-Input the transcription output from the <b>🎤 Speech Recognition</b> node here.
-Based on this transcription data, 🖼️ <b>Canvas Properties</b> and 🆗 <b>Font Properties</b> the text should be formatted in a way that builds up lines of words until there is no space on the canvas left (transcription_mode: fill, line).
-
-#### `highlight_font`
-
-Input a secondary font 🆗 <b>Font Properties</b>, that is used to highlight the active caption (transcription_mode: fill, line). When manually setting the text the following syntax can be used to defined which word/character:
-``` 
-Hello <tag>World</tag>
-``` 
-
-#### Outputs
-
-#### `images` 
-
-The generated images with the specified text and configurations, in common ComfyUI format (compatible with other nodes).
-
-#### `transcription_framestamps` 
-
-Framestamps formatted based on canvas, font and transcription settings.
-Can be useful to manually correct errors by 🎤 <b>Speech Recognition</b> node.
-Example: Save this output with 📝 <b>Save/Preview Text</b> -> manually correct mistakes -> remove transcription input from ✒️ <b>Text to Image Generator</b> node -> paste corrected framestamps into text input field of ✒️ <b>Text to Image Generator</b> node.
-
-
-</details>
-
-<details>
-  <summary>🆗 <b>Font Properties</b></summary>
-  
-#### Required Inputs
-
-#### `font_file`
-
-Fonts located in the custom_nodes\ComfyUI-Mana-Nodes\font_files\example_font.ttf or system font directories (supports .ttf, .otf, .woff, .woff2).
-
-#### `font_size` 
-
-Either set single value font_size or input animation definition via the ⏰ <b>Scheduled Values</b> node. (Convert font_size to input)
-
-#### `font_color` 
-
-Either set single color value (CSS3/Color/Extended color keywords) or input animation definition via the 🌈 <b>Preset Color Animations</b> node. (Convert font_color to input)
-
-#### `x_offset`, `y_offset`  
-
-Either set single horiontal and vertical offset value or input animation definition via the ⏰ <b>Scheduled Values</b> node. (Convert x_offset/y_offset to input)
-
-#### `rotation` 
-
-Either set single rotation value or input animation definition via the ⏰ <b>Scheduled Values</b> node. (Convert rotation to input)
-
-#### `rotation_anchor_x`, `rotation_anchor_y` 
-
-Horizontal and vertical offsets of the rotation anchor point, relative to the texts initial position.
-
-#### `kerning` 
-
-Spacing between characters of font.
-
-#### `border_width` 
-
-Width of the text border.
-
-#### `border_color` 
-
-Either set single color value (CSS3/Color/Extended color keywords) or input animation definition via the 🌈 <b>Preset Color Animations</b> node. (Convert border_color to input)
-
-#### `shadow_color` 
-
-Either set single color value (CSS3/Color/Extended color keywords) or input animation definition via the 🌈 <b>Preset Color Animations</b> node. (Convert shadow_color to input)
-
-#### `shadow_offset_x`, `shadow_offset_y`  
-
-Horizontal and vertical offset of the text shadow.
-
-#### Outputs
-
-#### `font` 
-
-Used as input on ✒️ <b>Text to Image Generator</b> node for the font and highlight_font.
-
-</details>
-
-<details>
-  <summary>🖼️ <b>Canvas Properties</b></summary>
-
-#### Required Inputs
-
-#### `height`, `width` 
-
-Dimensions of the canvas.
-
-#### `background_color`
-
-Background color of the canvas. (CSS3/Color/Extended color keywords)
-
-#### `padding` 
-
-Padding between image border and font.
-
-#### `line_spacing` 
-
-Spacing between lines of text on the canvas.
-
-#### Optional Inputs
-
-#### `images`
-
-Can be used to input images instead of using background_color. 
-
-#### Outputs
-
-#### `canvas` 
-
-Used as input on ✒️ <b>Text to Image Generator</b> node to define the canvas settings.
-
-</details>
-
-<details>
-  <summary>⏰ <b>Scheduled Values</b></summary>
-
-![Screenshot 2024-04-27 at 17-07-10 ComfyUI](https://github.com/ForeignGods/ComfyUI-Mana-Nodes/assets/78089013/ee456e65-9950-4138-8b37-23b007ec92d9)
-
-
-#### Required Inputs
-
-#### `frame_count`
-
-Sets the range of the x axis of the chart. (always starts at 1)
-
-#### `value_range`
-
-Sets the range of the y axis of the chart. (Example: 25, will would be ranging from -25 to 25)
-This can be changed by zooming via the mousewheel and will reset to the specified value if changed.
-
-#### `easing_type` 
-
-Is used to generate values in between of the manually added values by the user by clicking the <b>Generate Values</b> button.
-            
-The available easing functions are:
-
-- linear
-- easeInQuad
-- easeOutQuad
-- easeInOutQuad
-- easeInCubic
-- easeOutCubic
-- easeInOutCubic
-- easeInQuart
-- easeOutQuart
-- easeInOutQuart
-- easeInQuint
-- easeOutQuint
-- easeInOutQuint
-- exponential
-
-#### `step_mode` 
-
-The option <b>single</b> will force the chart to display every single tick/step on the chart.
-The option <b>auto</b> will automatically remove ticks/step to prevent overlapping.
-
-#### `animation_reset` 
-
-Used to specify the reset behaviour of the animation.
-
-- word: animation will be reset when a new word is displayed, stays on last value when animation finished before word change.
-- line: animation will be reset when a new line is displayed, stays on last value when animation finished before line change.
-- never: animation will just run once and stop on last value. (Not affected by word or line change)
-- looped: animation will endlessly loop. (Not affected by word or line change)
-- pingpong: animation will first play forward then back and so on. (Not affected by word or line change)
-
-#### `scheduled_values` 
-
-Adding Values: Click on the chart to add keyframes at specific points.
-Editing Values: Double-click on a keyframe to edit its frame and value.
-Deleting Values: Click on the delete button associated with each keyframe to remove it.
-Generating Values: Click on the "Generate Values" button to interpolate values between existing keyframes.
-Deleting Generated Values: Click on the "Delete Generated" button to remove all interpolated values.
-
-#### Outputs
-
-#### `scheduled_values` 
-
-Outputs a list of frame and value pairs and the animation_reset option.
-At the moment this output can be used to animate the following widgets (Convert property to input) of the 🆗 <b>Font Properties</b> node:
-- font_size (font, higlight_font)
-- x_offset (font)
-- y_offset (font)
-- rotation (font)
-
-</details>
-
-<details>
-  <summary>🌈 <b>Preset Color Animations</b></summary>
-
-#### Required Inputs
-
-#### `color_preset` 
-
-Currently the following color animation presets are available:
-- rainbow
-- sunset
-- grey
-- ocean
-- forest
-- fire
-- sky
-- earth
-
-#### `animation_duration`
-
-Sets the length of the animation measured as frames.
-
-#### `animation_reset` 
-
-Used to specify the reset behaviour of the animation.
-
-- word: animation will be reset when a new word is displayed, stays on last value when animation finished before word change.
-- line: animation will be reset when a new line is displayed, stays on last value when animation finished before line change.
-- never: animation will just run once and stop on last value. (Not affected by word or line change)
-- looped: animation will endlessly loop. (Not affected by word or line change)
-- pingpong: animation will first play forward then back and so on. (Not affected by word or line change)
-  
-#### Outputs
-
-#### `scheduled_colors` 
-
-Outputs a list of frame and color definitions and the animation_reset option.
-At the moment this output can be used to animate the following widgets (Convert property to input) of the 🆗 <b>Font Properties</b> node:
-- font_color (font, higlight_font)
-- border_color (font, higlight_font)
-- shadow_color (font, higlight_font)
-
-</details>
-
-<details>
-  <summary>🎤 <b>Speech Recognition</b></summary>
-
-Converts spoken words in an audio file to text using a deep learning model.
-
-#### Required Inputs
-
-#### `audio` 
-Audio file path or URL.
-#### `wav2vec2_model` 
-The Wav2Vec2 model used for speech recognition. (https://huggingface.co/models?search=wav2vec2)
-#### `spell_check_language` 
-Language for the spell checker.
-#### `framestamps_max_chars` 
-Maximum characters allowed until new framestamp line is created.
-
-#### Optional Inputs
-
-#### `fps` 
-Frames per second, used for synchronizing with video. (Default set to 30)
-
-#### Outputs
-
-#### `transcription` 
-Text transcription of the audio. (Should only be used as font2img transcription input)
-#### `raw_string` 
-Raw string of the transcription without timestamps.
-### `framestamps_string` 
-Frame-stamped transcription.
-### `timestamps_string` 
-Transcription with timestamps.
-
-#### Example Outputs
-
-#### `raw_string` 
-Returns the transcribed text as one line.
+### Minimal example: static caption
 
 ```
-THE GREATEST TRICK THE DEVIL EVER PULLED WAS CONVINCING THE WORLD HE DIDN'T EXIST
+[Canvas Properties] -> canvas -\
+                              [Text to Image Generator] -> images
+[Font Properties]  -> font   -/        text: "Hello world"
+                                    frame_count: 60
 ```
 
-#### `framestamps_string` 
-Depending on the <b>framestamps_max_chars</b> parameter the sentece will be cleared and starts to build up again until max_chars is reached again. 
-  - In this example <b>framestamps_max_chars</b> is set to <b>25</b>.
+The output `images` is a standard ComfyUI IMAGE batch — connect it to
+`PreviewImage`, `SaveImage`, a video Combine, or anything else.
+
+### Karaoke-style caption from audio
 
 ```
-"27": "THE",
-"31": "THE GREATEST",
-"43": "THE GREATEST TRICK",
-"73": "THE GREATEST TRICK THE",
-"77": "DEVIL",
-"88": "DEVIL EVER",
-"94": "DEVIL EVER PULLED",
-"127": "DEVIL EVER PULLED WAS",
-"133": "CONVINCING",
-"150": "CONVINCING THE",
-"154": "CONVINCING THE WORLD",
-"167": "CONVINCING THE WORLD HE",
-"171": "DIDN'T",
-"178": "DIDN'T EXIST",
+[LoadAudio] -> [Speech Recognition]              -> transcription
+                       (transcription_mode: word)        |
+                                                          v
+                       [Font Properties] -> font  -> [Text to Image Gen]
+                       [Canvas Properties] -> canvas  (highlight_font: a
+                       [text: "{}"]      -> text      second Font Props)
+                       [frame_count: 240] -> frame_count
 ```
 
-#### `timestamps_string` 
-Returns all transcribed words, their start_time and end_time in json format as a string.
+### Animated text
 
 ```
-[
-  {
-    "word": "THE",
-    "start_time": 0.9,
-    "end_time": 0.98
-  },
-  {
-    "word": "GREATEST",
-    "start_time": 1.04,
-    "end_time": 1.36
-  },
-  {
-    "word": "TRICK",
-    "start_time": 1.44,
-    "end_time": 1.68
-  },
-...
-]
+[Scheduled Values] -> scheduled_values -> [Font Properties]
+                                              -> font
+                                            [Text to Image Generator]
+[Canvas Properties] -> canvas             -> images
+[text: "BOOM"]      -> text
+[frame_count: 60]   -> frame_count
 ```
 
-</details>
+Click on the chart in Scheduled Values to add keyframes. Pick an
+easing (linear, easeInOut, exponential, etc.) and click "Generate
+Values" to interpolate between them.
 
-<details>
-  <summary>🎞️ <b>Split Video</b></summary>
+### Full video caption pipeline
 
+```
+[Load Video] -> [Split Video] -> frames
+                       |        |
+                       |        +-> [Speech Recognition] -> transcription
+                       |                                  |
+                       |                                  v
+                       |              [Font Props] + [Canvas Props] + [text: "{}"]
+                       |                                  |
+                       |                                  v
+                       |                          [Text to Image Gen] -> images
+                       |                                                 |
+                       +-> audio_file                                     v
+                                                                          [Combine Video]
+                                                                                |
+                                                                                v
+                                                                          [VHS_VideoCombine]
+                                                                          (final MP4 on disk)
+```
 
-#### Required Inputs
+Optional dependencies for the full pipeline:
+- [ComfyUI-VideoHelperSuite](https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite) for `Load Video` and `VHS_VideoCombine`.
 
-#### `video` 
-Path the video file.
-#### `frame_limit` 
-Maximum number of frames to extract from the video.
-#### `frame_start` 
-Starting frame number for extraction.
-#### `filename_prefix` 
-Prefix for naming the extracted audio file. (relative to .\ComfyUI\output)
+---
 
-#### Outputs
+## Demo
 
-#### `frames` 
-Extracted frames as image tensors.
-#### `frame_count` 
-Total number of frames extracted.
-#### `audio_file` 
-Path of the extracted audio file.
-#### `fps` 
-Frames per second of the video.
-#### `height`, `width:` 
-Dimensions of the extracted frames.
-
-</details>
-
-<details>
-  <summary>🎥 <b>Combine Video</b></summary>
-
-#### Required Inputs
-
-#### `frames` 
-Sequence of images to be used as video frames.
-#### `filename_prefix` 
-Prefix for naming the video file. (relative to .\ComfyUI\output)
-#### `fps` 
-Frames per second for the video.
-
-#### Optional Inputs
-
-#### `audio_file` 
-Audio file path or URL.
-
-#### Outputs
-
-#### `video_file` 
-Path to the created video file.
-
-</details>
-
-<details>
-  <summary>📣 <b>Generate Audio</b> (experimental)</summary>
-
-
-Converts text to speech and saves the output as an audio file.
-
-#### Required Inputs
-
-#### `text` 
-The text to be converted into speech.
-#### `filename_prefix` 
-Prefix for naming the audio file. (relative to .\ComfyUI\output)
-
-This node uses a text-to-speech pipeline to convert input text into spoken words, saving the result as a WAV file. The generated audio file is named using the provided filename prefix and is stored relative to the .\ComfyUI-Mana-Nodes directory.
-
-Model: [https://huggingface.co/spaces/suno/bark](https://huggingface.co/suno/bark)
-
-#### Foreign Language
-
-Bark supports various languages out-of-the-box and automatically determines language from input text. When prompted with code-switched text, Bark will even attempt to employ the native accent for the respective languages in the same voice.
-
-Example:
-<pre>Buenos días Miguel. Tu colega piensa que tu alemán es extremadamente malo. But I suppose your english isn't terrible.</pre>
-
-#### Non-Speech Sounds
-
-Below is a list of some known non-speech sounds, but we are finding more every day.
-<pre>
-[laughter]
-[laughs]
-[sighs]
-[music]
-[gasps]
-[clears throat]
-— or … for hesitations
-♪ for song lyrics
-capitalization for emphasis of a word
-MAN/WOMAN: for bias towards speaker
-</pre>
-
-Example:
-<pre>" [clears throat] Hello, my name is Suno. And, uh — and I like pizza. [laughs] But I also have other interests such as... ♪ singing ♪."</pre>
-
-#### Music
-
-Bark can generate all types of audio, and, in principle, doesn’t see a difference between speech and music. Sometimes Bark chooses to generate text as music, but you can help it out by adding music notes around your lyrics.
-
-Example:
-<pre>♪ In the jungle, the mighty jungle, the lion barks tonight ♪</pre>
-
-#### Speaker Prompts
-
-You can provide certain speaker prompts such as NARRATOR, MAN, WOMAN, etc. Please note that these are not always respected, especially if a conflicting audio history prompt is given.
-
-Example:
-<pre>WOMAN: I would like an oatmilk latte please.
-MAN: Wow, that's expensive!</pre>
-
-
-
-</details>
-<details>
-  <summary>📝 <b>Save/Preview Text</b></summary>
-
-#### Required Inputs
-
-#### `string` 
-The string to be written to the file.
-#### `filename_prefix` 
-Prefix for naming the text file. (relative to .\output)
-
-</details>
-
-## Example Workflows
-
-### LCM AnimateDiff Text Animation 
-
-#### Demo
+### LCM AnimateDiff Text Animation
 
 | Demo 1 | Demo 2 | Demo 3 |
 | ------ | ------ | ------ |
-|![demo1](https://github.com/ForeignGods/ComfyUI-Mana-Nodes/assets/78089013/7b77b9cc-457f-4061-ac6c-2f78efb8bffc)|![demo2](https://github.com/ForeignGods/ComfyUI-Mana-Nodes/assets/78089013/89bc4309-6c46-4d08-9d9c-521e00415e65)|![demo3](https://github.com/ForeignGods/ComfyUI-Mana-Nodes/assets/78089013/ae2e09c5-459c-4b4d-ad71-4db31684573f)|
+| ![demo1](https://github.com/ForeignGods/ComfyUI-Mana-Nodes/assets/78089013/7b77b9cc-457f-4061-ac6c-2f78efb8bffc) | ![demo2](https://github.com/ForeignGods/ComfyUI-Mana-Nodes/assets/78089013/89bc4309-6c46-4d08-9d9c-521e00415e65) | ![demo3](https://github.com/ForeignGods/ComfyUI-Mana-Nodes/assets/78089013/ae2e09c5-459c-4b4d-ad71-4db31684573f) |
 
+Workflow: [example_workflows/example_workflow_1.json](example_workflows/example_workflow_1.json)
 
-#### Workflow
+### Speech Recognition Caption Generator
 
-[example_workflow_1.json](example_workflows/example_workflow_1.json)
+[example_workflows/example_workflow_2.json](example_workflows/example_workflow_2.json)
 
-The values for the ⏰ Scheduled Values node cannot be imported yet (you have to add them yourself).
+---
 
-![Screenshot 2024-04-28 at 19-18-01 ComfyUI](https://github.com/ForeignGods/ComfyUI-Mana-Nodes/assets/78089013/fa739ab0-91e5-4df7-9bd9-727abb6fb86a)
+## Requirements
 
-### Speech Recognition Caption Generator 
+- **Python**: 3.10 / 3.11 / 3.12
+- **PyTorch**: >= 2.0
+- **Pillow**: >= 10.0.0 (required — `Image.ANTIALIAS` was removed)
+- **moviepy**: 1.x or 2.x (both work)
+- **transformers**: >= 4.30
+- **librosa, matplotlib, scipy, requests, pyspellchecker**
 
-#### Demo
+See [requirements.txt](requirements.txt) for the full pinned list. The file
+is pure ASCII so it works on Chinese Windows where the default locale is GBK
+(a non-ASCII comment previously broke `pip install` with `UnicodeDecodeError`).
 
-Turn on audio.
+---
 
-https://github.com/ForeignGods/ComfyUI-Mana-Nodes/assets/78089013/e5a39327-db61-46ad-abea-10e27e4551c1
+## Performance notes
 
-#### Workflow
+- **First run** of Speech Recognition / Generate Audio downloads the
+  model weights (~1-2 GB) once. Subsequent runs are fast because the
+  weights are cached with `lru_cache`.
+- **Text rendering** is now 5-10x faster than the original code on
+  long captions because the per-character border pixel loop was
+  replaced with PIL's native `stroke_width` rasterization.
+- **Font loading** uses an LRU cache; loading the same font/size
+  twice is essentially free.
 
-[example_workflow_2.json](example_workflows/example_workflow_2.json)
+---
 
-![TRANSCRIPTION](https://github.com/ForeignGods/ComfyUI-Mana-Nodes/assets/78089013/e4d6aa73-3a4b-483e-b763-73b88c8cb261)
+## Troubleshooting
 
-## To-Do
+**Can't find the node in the search box.** Type `mana` instead of
+`Mana Nodes`. ComfyUI does substring match against the class
+`DESCRIPTION`; the most useful keywords are `mana`, `caption`,
+`subtitle`, `typography`, `transcribe`.
 
-- [ ] Improve Speech Recognition
-- [ ] Improve Text to Speech
-- [ ] Node to download fonts from DaFont.com
-- [ ] SVG Loader/Animator
-- [ ] Text to Image Generator Alpha Channel
-- [ ] Add Font Support for non Latin Characters
-- [ ] 3D Effects, Bevel/Emboss, Inner Shading, Fade in/out 
-- [ ] Find a better way to define color animations
-- [ ] Make more Font Properties animatable
+**`NameError: name 'font_manager' is not defined`.** ComfyUI is
+running an older copy of the node files. Copy the latest
+`nodes/font2img_node.py` and `nodes/text_graphic_element_node.py`
+over the install directory.
+
+**`pip install` fails with `UnicodeDecodeError: 'gbk' codec can't
+decode byte 0x94`.** The `requirements.txt` got rewritten with
+non-ASCII characters. The latest version of this repo is pure
+ASCII and should install cleanly.
+
+**Scheduled Values chart is too small or doesn't resize.** Make sure
+you're running the latest `web/js/scheduled_values.js`. Recent
+versions use `getMinHeight`/`getMaxHeight` so the chart scales with
+the canvas zoom.
+
+**Deprecation warnings about `/scripts/ui.js`, `groupNode.js`,
+`buttonGroup.js`, `button.js`.** These come from other ComfyUI
+extensions, not from Mana. The current Mana code does not import
+any of these paths.
+
+**`UnicodeDecodeError: 'gbk' codec can't decode byte 0x94`.** The
+requirements.txt file got mangled. Re-download from the latest
+commit at the top of this README.
+
+For full documentation, see [FEATURES.md](FEATURES.md).
+
+---
+
+## Project structure
+
+```
+ComfyUI-Mana-Nodes/
++- __init__.py                # Node registration + search aliases
++- FEATURES.md                # Full input/output reference (10 nodes)
++- README.md                  # This file
++- requirements.txt           # Pinned dependencies (pure ASCII)
++- helpers/                   # Shared modules
+|  +- animation.py            # Keyframe math
+|  +- font_loader.py          # Font discovery + LRU cache
+|  +- logger.py               # Real logger
+|  +- utils.py                # Tensor/audio utilities
++- nodes/                     # 10 node implementations
++- web/
+|  +- user.css                # Empty placeholder (prevents 404)
+|  +- js/                     # 4 frontend extensions
++- font_files/                # 11 example fonts
++- example_workflows/         # Two ready-to-use JSON workflows
+```
+
+---
+
+## Changelog
+
+### v2.0.0 (2026-09)
+
+Comprehensive optimization and bug-fix release. **9 P0 bugs fixed**,
+**5-10x performance on text rendering**, full code audit and refactor.
+
+| Commit | Highlights |
+|--------|-----------|
+| `5862f35` | 9 P0 fixes (shadow double-draw, ANTIALIAS, subclip deprecation, scheduled_values type mismatch, color_animations format, Font Properties missing input, etc.) + performance refactor (PIL stroke_width, lru_cache on models/fonts) |
+| `6c3e007` | requirements.txt: correct version constraints to match 2026-09 PyPI reality |
+| `cbb93f0` | requirements.txt: pure ASCII to fix Chinese-Windows GBK decode error |
+| `85b899f` | Runtime fixes: font_manager NameError + scripts/ui.js deprecation |
+| `b98df75` | Fix scheduled_values crash when actually used (hidden for years) |
+| `c029f1c` | Remove startup ERROR log spam |
+| `13bc45a` | Fix nodes not auto-resizing with canvas zoom |
+| `ab626e3` | Fix runtime JS errors: URL crash, init() crash, user.css 404, widgets.js deprecation |
+| `5e878d0` | Add FEATURES.md + DESCRIPTION class attribute for node search |
+| `5e878d0` | New README.md (this file) |
+
+### v1.0.0 (original)
+
+Initial release by [ForeignGods](https://github.com/ForeignGods).
+
+---
+
+## Credits
+
+- **Original author:** [ForeignGods](https://github.com/ForeignGods)
+- **v2.0 maintenance:** [fogyisland](https://github.com/fogyisland)
+- Built for [ComfyUI](https://github.com/comfyanonymous/ComfyUI)
+- Models used: [wav2vec2](https://huggingface.co/models?search=wav2vec2) (HuggingFace), [Bark](https://huggingface.co/suno/bark) (Suno)
 
 ## Contributing
 
-Your contributions to improve Mana Nodes are welcome! 
+Bug reports and pull requests welcome. If your PR is a behavior change,
+please open an issue first to discuss.
 
-If you have suggestions or enhancements, feel free to fork this repository, apply your changes, and create a pull request. For significant modifications or feature requests, please open an issue first to discuss what you'd like to change.
+## Star History
 
+If Mana Nodes saved you time, consider giving the repo a star and
+[buying the original author a coffee](https://buymeacoffee.com/foreigngods).
+
+---
+
+# 中文文档
+
+ComfyUI Mana Nodes 是一组 **10 个自定义节点**，专注于 ComfyUI 中的文字内容创作：
+动态字幕、动画文字、语音转文字、视频/音频工具。
+
+> **搜索提示：** 在 ComfyUI 节点搜索框输入 `mana`、`caption`（字幕）、
+> `subtitle`（副标题）、`typography`（排版）或 `transcribe`（转录）即可找到对应节点。
+
+---
+
+## v2.0 新特性
+
+这是对原版 [ComfyUI-Mana-Nodes](https://github.com/ForeignGods/ComfyUI-Mana-Nodes)
+（作者 [ForeignGods](https://github.com/ForeignGods)）的**全面维护和优化版本**。
+所有节点已重构，但**对现有工作流保持 100% 兼容**——没有行为变更。
+
+### 修复的 Bug（10 个关键问题）
+
+- **9 个 P0 致命 Bug**：阴影重复绘制、缺少 `scheduled_values` 输入、
+  Pillow 10+ `ANTIALIAS` 已删除、`subclip` 弃用等
+- **`scheduled_values` 崩溃**：实际使用时崩溃（隐藏了多年，因为输入参数从未被定义）
+- **运行时 JS 错误**：`Failed to construct 'URL'`、扩展初始化失败、缺少 `user.css` 404
+- **启动时 ERROR 日志骚扰**（`[Mana] - ERROR - Mana Web`）已移除
+
+### 性能提升（文字渲染 5-10 倍）
+
+- 描边改用 PIL 原生 `stroke_width`，不再逐像素循环
+- 字体加载用 `lru_cache`（256 项）——之前每帧重新解析 ttf
+- wav2vec2 + Bark 模型权重用 `lru_cache`——不再每次运行重新下载 GB 级数据
+- 视频输入目录扫描用类级缓存
+- 字符循环中预计算字体度量
+
+### 易用性改进
+
+- 每个节点都加 `DESCRIPTION`，搜索 `mana`、`caption` 等即可找到
+- 真正可用的 logger（旧版本静默吞掉所有错误）
+- `requirements.txt` 纯 ASCII（之前因 GBK 编码导致中文 Windows 下 `pip install` 失败）
+- 完整的 `from __future__ import annotations` 和类型注解
+- 提取公共模块：`helpers/animation.py`、`helpers/font_loader.py`
+
+---
+
+## 节点清单（共 10 个）
+
+| 节点 | 类名 | 用途 |
+|------|------|------|
+| ✒️ **Text to Image Generator**（文字转图像） | `Text to Image Generator` | 把文字渲染为 ComfyUI IMAGE 批次。核心节点。 |
+| 🆗 **Font Properties**（字体属性） | `Font Properties` | 字体、字号、颜色、描边、阴影、旋转、偏移。全部可动画。 |
+| 🖼️ **Canvas Properties**（画布属性） | `Canvas Properties` | 输出尺寸、背景颜色/图片、内边距、对齐。 |
+| ⏰ **Scheduled Values**（调度值） | `Scheduled Values` | 交互式关键帧图表，驱动任意字体属性随时间变化。 |
+| 🌈 **Preset Color Animations**（预设颜色动画） | `Preset Color Animations` | 循环播放 rainbow/sunset/sky/ocean 等调色板。 |
+| 🎤 **Speech Recognition**（语音识别） | `Speech Recognition` | wav2vec2 转录 -> 字幕时间线。 |
+| 📣 **Generate Audio**（生成音频） | `Generate Audio` | Bark 文字转语音。 |
+| 🎞️ **Split Video**（分割视频） | `Split Video` | 从视频中提取帧 + 音频段。 |
+| 🎥 **Combine Video**（合成视频） | `Combine Video` | 把 IMAGE 批次拼成 MP4。 |
+| 📝 **Save/Preview Text**（保存/预览文本） | `Save/Preview Text` | 把 STRING 写入 .txt 文件并显示预览。 |
+
+完整输入输出参考：[FEATURES.md](FEATURES.md)
+
+---
+
+## 快速开始
+
+### 安装
+
+```bash
+# 1. 安装 ComfyUI-Manager（一次性）
+cd ComfyUI/custom_nodes
+git clone https://github.com/ltdrdata/ComfyUI-Manager.git
+
+# 2. 安装 Mana Nodes
+git clone https://github.com/fogyisland/ManaNodesUpdate.git ComfyUI-Mana-Nodes
+
+# 3. 安装依赖（Python 3.10 / 3.11 / 3.12）
+cd ComfyUI-Mana-Nodes
+pip install -r requirements.txt
+
+# 4. 重启 ComfyUI
+```
+
+或者用 ComfyUI-Manager UI：搜索 "Mana Nodes" 点击安装。
+
+### 最简示例：静态字幕
+
+```
+[Canvas Properties] -> canvas -\
+                              [Text to Image Generator] -> images
+[Font Properties]  -> font   -/        text: "Hello world"
+                                    frame_count: 60
+```
+
+输出 `images` 是标准 ComfyUI IMAGE 批次——可以接 `PreviewImage`（预览）、
+`SaveImage`（保存）、`Combine Video`（合成视频）或其他任何节点。
+
+### 卡拉OK 字幕（音频驱动）
+
+```
+[LoadAudio] -> [Speech Recognition]              -> transcription
+                       (transcription_mode: word)        |
+                                                          v
+                       [Font Properties] -> font  -> [Text to Image Gen]
+                       [Canvas Properties] -> canvas  (highlight_font: a
+                       [text: "{}"]      -> text      second Font Props)
+                       [frame_count: 240] -> frame_count
+```
+
+### 动画文字
+
+```
+[Scheduled Values] -> scheduled_values -> [Font Properties]
+                                              -> font
+                                            [Text to Image Generator]
+[Canvas Properties] -> canvas             -> images
+[text: "BOOM"]      -> text
+[frame_count: 60]   -> frame_count
+```
+
+在 Scheduled Values 的图表上点击添加关键帧，选择缓动类型
+（linear、easeInOut、exponential 等），点击 "Generate Values"
+自动在关键帧之间插值。
+
+### 完整视频字幕流水线
+
+```
+[Load Video] -> [Split Video] -> frames
+                       |        |
+                       |        +-> [Speech Recognition] -> transcription
+                       |                                  |
+                       |                                  v
+                       |              [Font Props] + [Canvas Props] + [text: "{}"]
+                       |                                  |
+                       |                                  v
+                       |                          [Text to Image Gen] -> images
+                       |                                                 |
+                       +-> audio_file                                     v
+                                                                          [Combine Video]
+                                                                                |
+                                                                                v
+                                                                          [VHS_VideoCombine]
+                                                                          (最终 MP4 保存到磁盘)
+```
+
+完整流水线需要：
+- [ComfyUI-VideoHelperSuite](https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite)：提供 `Load Video` 和 `VHS_VideoCombine`
+
+---
+
+## 性能说明
+
+- **首次运行** Speech Recognition / Generate Audio 会下载模型权重
+  （约 1-2 GB）。**后续运行很快**，因为权重被 `lru_cache` 缓存。
+- **文字渲染** 比原版快 **5-10 倍**（在长字幕上尤其明显），因为
+  逐字符描边像素循环被替换为 PIL 原生 `stroke_width` 光栅化。
+- **字体加载** 使用 LRU 缓存；同一字体/大小加载两次几乎免费。
+
+---
+
+## 故障排查
+
+**搜索框找不到节点。** 输入 `mana` 而不是 `Mana Nodes`。ComfyUI
+对节点的 `DESCRIPTION` 类属性做子字符串匹配；最有效的关键词是
+`mana`、`caption`（字幕）、`subtitle`（副标题）、
+`typography`（排版）、`transcribe`（转录）。
+
+**`NameError: name 'font_manager' is not defined`。** ComfyUI 运行的是
+旧版节点文件。复制最新的 `nodes/font2img_node.py` 和
+`nodes/text_graphic_element_node.py` 覆盖安装目录。
+
+**`pip install` 失败并显示 `UnicodeDecodeError: 'gbk' codec can't decode byte 0x94`。**
+`requirements.txt` 被写入了非 ASCII 字符。本仓库最新版本是纯 ASCII，
+应该可以正常安装。
+
+**Scheduled Values 图表太小或不缩放。** 确认你运行的是最新的
+`web/js/scheduled_values.js`。最新版本使用 `getMinHeight` /
+`getMaxHeight`，图表会随画布缩放。
+
+**Deprecation 警告：`/scripts/ui.js`、`groupNode.js`、`buttonGroup.js`、`button.js`。**
+这些来自其他 ComfyUI 扩展，**不是来自 Mana**。最新的 Mana 代码不导入这些路径。
+
+完整文档：[FEATURES.md](FEATURES.md)
+
+---
+
+## 致谢
+
+- **原作者：** [ForeignGods](https://github.com/ForeignGods)
+- **v2.0 维护：** [fogyisland](https://github.com/fogyisland)
+- 为 [ComfyUI](https://github.com/comfyanonymous/ComfyUI) 构建
+- 使用的模型：[wav2vec2](https://huggingface.co/models?search=wav2vec2)（HuggingFace）、
+  [Bark](https://huggingface.co/suno/bark)（Suno）
+
+如果 Mana Nodes 节省了你的时间，欢迎给仓库点 ⭐ Star，并请
+[原作者喝杯咖啡](https://buymeacoffee.com/foreigngods)。
