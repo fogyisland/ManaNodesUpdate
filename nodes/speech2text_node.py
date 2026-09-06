@@ -104,6 +104,29 @@ LANGUAGE_TO_ISO: dict[str, str | None] = {
 TRANSCRIPTION_MODES: tuple[str, ...] = ("word", "line", "fill")
 
 
+# Approximate on-disk size of each curated model. Used in the
+# progress log so the user knows whether to expect 1 minute or
+# 30 minutes for a first download. Numbers are conservative.
+_MODEL_SIZES_MB: dict[str, int] = {
+    "jonatasgrosman/wav2vec2-large-xlsr-53-english": 1200,
+    "facebook/wav2vec2-base-960h": 360,
+    "facebook/wav2vec2-large-960h-lv60-self": 1200,
+    "facebook/mms-1b-all": 3500,
+    "facebook/mms-1b-fl102": 1500,
+    "jonatasgrosman/wav2vec2-large-xlsr-53-chinese-zh-cn": 1200,
+    "facebook/wav2vec2-large-xlsr-53-chinese-zh-cn": 1200,
+    "jonatasgrosman/wav2vec2-large-xlsr-53-japanese": 1200,
+    "jonatasgrosman/wav2vec2-large-xlsr-53-korean": 1200,
+    "jonatasgrosman/wav2vec2-large-xlsr-53-spanish": 1200,
+    "jonatasgrosman/wav2vec2-large-xlsr-53-french": 1200,
+    "jonatasgrosman/wav2vec2-large-xlsr-53-german": 1200,
+    "jonatasgrosman/wav2vec2-large-xlsr-53-italian": 1200,
+    "jonatasgrosman/wav2vec2-large-xlsr-53-portuguese": 1200,
+    "jonatasgrosman/wav2vec2-large-xlsr-53-russian": 1200,
+    "jonatasgrosman/wav2vec2-large-xlsr-53-arabic": 1200,
+}
+
+
 @functools.lru_cache(maxsize=4)
 def _load_wav2vec2(model_id: str) -> tuple:
     """Cache (model, processor) so we don't re-download GBs of weights per call.
@@ -127,14 +150,22 @@ def _load_wav2vec2(model_id: str) -> tuple:
     if not existing:
         org, name = model_id.split("/", 1) if "/" in model_id else ("", model_id)
         snapshot_dir = f"{cache_dir}{os.sep}models--{org}--{name}{os.sep}snapshots{os.sep}<hash>"
+        size_mb = _MODEL_SIZES_MB.get(model_id, 1500)
         logger().info(
             "Mana models dir %s is empty; %s will be downloaded "
-            "on first use. If the download fails (firewall / slow "
-            "link / no internet), download manually from "
-            "https://huggingface.co/%s and place all files in:\n"
+            "on first use (~%d MB, %.1f GB). If the download fails "
+            "(firewall / slow link / no internet), download manually "
+            "from https://huggingface.co/%s and place all files in:\n"
             "  %s",
-            cache_dir, model_id, model_id, snapshot_dir,
+            cache_dir, model_id, size_mb, size_mb / 1024,
+            model_id, snapshot_dir,
         )
+    else:
+        # Tell the user what we found so they can verify it's the
+        # right model. Saves a debugging round when the model is
+        # cached but stale.
+        for path in existing:
+            logger().info("Speech recognition: found cached model at %s", path)
 
     # Periodic progress reporter so the user sees that the node is
     # alive while transformers is downloading. Without this the green
@@ -151,10 +182,15 @@ def _load_wav2vec2(model_id: str) -> tuple:
             if now - last_log < 5.0:
                 continue
             last_log = now
+            size_mb = _MODEL_SIZES_MB.get(model_id, 1500)
+            size_gb = size_mb / 1024
+            elapsed = now - started
+            # Rough bandwidth estimate: 1 MB/s = 8 Mbps. A slow
+            # connection (256 Kbps) is 0.03 MB/s.
             logger().info(
-                "Speech recognition: still loading %s (this can take "
-                "1-5 minutes on first run; ~1.2 GB). Cache: %s",
-                model_id, cache_dir,
+                "Speech recognition: still loading %s (%.1f GB). "
+                "Elapsed: %.0fs. Cache: %s",
+                model_id, size_gb, elapsed, cache_dir,
             )
 
     reporter = threading.Thread(target=_reporter, daemon=True)
