@@ -29,6 +29,11 @@ app.registerExtension({
                     if (previewWidget.inputEl) {
                         previewWidget.inputEl.readOnly = false;
                         previewWidget.inputEl.style.opacity = 0.6;
+                        // Give the preview a sensible min height so it
+                        // doesn't render as a single-line box on first
+                        // add. ComfyUI's string widget defaults to ~24px.
+                        previewWidget.inputEl.style.minHeight = "80px";
+                        previewWidget.inputEl.style.resize = "vertical";
                     }
                 }
                 previewWidget.value = previewText;
@@ -41,6 +46,7 @@ app.registerExtension({
                         if (sz[1] < this.size[1]) sz[1] = this.size[1];
                     }
                     this.onResize?.(sz);
+                    // Force a redraw so the new text height is picked up.
                     app.graph?.setDirtyCanvas(true, false);
                 });
             }

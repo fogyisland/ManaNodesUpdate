@@ -89,11 +89,22 @@ class TimelineWidget {
     
     createChartContainer() {
         this.chartContainer = document.createElement('div');
-        this.chartContainer.style.height = '200px';
-        this.chartContainer.style.width = '200px';
+        // Use 100% dimensions so the chart fills the DOM widget area
+        // (which ComfyUI scales with the canvas zoom level). A minHeight
+        // keeps the chart usable when the user hasn't resized the node
+        // yet.
+        this.chartContainer.style.width = '100%';
+        this.chartContainer.style.height = '100%';
+        this.chartContainer.style.minHeight = '200px';
+        this.chartContainer.style.position = 'relative';
 
-        this.node.addDOMWidget("chart", "custom", this.chartContainer, {});
-        
+        // getMinHeight / getMaxHeight drive the node's auto-resize. With
+        // them set, ComfyUI grows the node to fit the chart and the
+        // user can also drag-resize within these bounds.
+        this.node.addDOMWidget("chart", "custom", this.chartContainer, {
+            getMinHeight: () => 200,
+            getMaxHeight: () => 800,
+        });
     }
 
     updateGenerateButtonState() {
@@ -652,7 +663,13 @@ class TimelineWidget {
         };
 
         this.chartContainer.appendChild(canvas);
-        
+        // `display: block` is required for Chart.js's responsive sizing:
+        // canvas defaults to `inline` which adds baseline whitespace and
+        // throws off the container's measured height.
+        canvas.style.display = "block";
+        canvas.style.width = "100%";
+        canvas.style.height = "100%";
+
         this.chart = new Chart(canvas.getContext('2d'), config);
 
 

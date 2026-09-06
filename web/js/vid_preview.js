@@ -204,10 +204,17 @@ export function addVideoPreview(nodeType, options = {}) {
             const widget = this.widgets[widgetIdx];
             widget.options.host.updateImages(this.imgs);
           } else {
-            this.setSizeForImage(true);
+            // setSizeForImage makes the node grow to fit the first
+            // loaded image. Without it, the preview collapses to the
+            // default node size and the user has to drag-resize.
+            if (typeof this.setSizeForImage === "function") {
+              this.setSizeForImage(true);
+            }
             const widget = this.addDOMWidget(ANIM_PREVIEW_WIDGET, 'img', host.el, {
               host,
               getHeight: host.getHeight,
+              getMinHeight: () => 120,
+              getMaxHeight: () => 1024,
               onDraw: host.onDraw,
               hideOnZoom: false,
             });
