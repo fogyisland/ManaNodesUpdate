@@ -185,22 +185,57 @@ class speech2text:
         # model and produce NaN logits. Bail out early with an empty
         # list so downstream nodes see a well-defined empty result
         # instead of a stack of "NaN" timestamps.
+        from ..helpers.logger import logger
         import math
-        if audio_array is None or len(audio_array) == 0:
+
+        if audio_array is None:
+            logger().warning("Speech recognition: audio_array is None — "
+                             "LoadAudio likely didn't connect. Returning [].")
             return []
-        if not math.isfinite(float(audio_array.max())) or not math.isfinite(float(audio_array.min())):
+        if len(audio_array) == 0:
+            logger().warning("Speech recognition: audio has 0 samples. Returning [].")
             return []
-        if abs(float(audio_array.max())) < 1e-6 and abs(float(audio_array.min())) < 1e-6:
-            return []  # silence
+
+        # Diagnostic info — printed once per run. Helps the user
+        # figure out *why* they got 0 words: silent input, too-short
+        # input, or all-NaN model output.
+        duration_s = len(audio_array) / 16_000
+        peak = float(abs(audio_array).max()) if len(audio_array) else 0.0
+        rms = float(np.sqrt(np.mean(audio_array.astype(np.float32) ** 2))) if len(audio_array) else 0.0
+        logger().info(
+            "Speech recognition input: %d samples (%.2fs @ 16kHz), peak=%.3f, rms=%.4f, model=%s",
+            len(audio_array), duration_s, peak, rms, model_id,
+        )
+
+        if not math.isfinite(peak) or peak < 1e-6:
+            logger().warning(
+                "Speech recognition: audio is silent (peak=%.6f). "
+                "wav2vec2 needs audible speech to produce output.",
+                peak,
+            )
+            return []
+
+        # wav2vec2 XLSR models are trained on ~15-30s clips. Longer
+        # audio gets sliced or produces NaN in the attention. Cap at
+        # 30s and emit a warning so the user knows why we truncated.
+        if duration_s > 30:
+            logger().info(
+                "Speech recognition: audio is %.1fs long, taking the "
+                "first 30s (wav2vec2 XLSR context window). For longer "
+                "files, split the audio with ffmpeg first.",
+                duration_s,
+            )
+            audio_array = audio_array[:16_000 * 30]
 
         model, processor = _load_wav2vec2(model_id)
         try:
             inputs = processor(audio_array, sampling_rate=16_000, return_tensors="pt", padding=True)
             with torch.no_grad():
                 predicted_ids = model(inputs.input_values).logits.argmax(dim=-1)
-            return _group_tokens_into_words(_token_timestamps(predicted_ids, processor))
+            words = _group_tokens_into_words(_token_timestamps(predicted_ids, processor))
+            logger().info("Speech recognition: produced %d word(s)", len(words))
+            return words
         except Exception as e:
-            from ..helpers.logger import logger
             logger().error("Speech recognition failed: %s", e)
             return []
 
