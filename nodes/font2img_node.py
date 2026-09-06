@@ -367,10 +367,24 @@ class font2img:
         return ' '.join(non_tagged_parts), ' '.join(tagged_parts)  
       
     def process_single_image(self, image, text, font, rotation_angle, x_offset, y_offset, text_position, tagged_font, font_color, border_color, shadow_color, tagged_font_color, tagged_border_color, tagged_shadow_color, kwargs ):
-        rotation_anchor_x = kwargs['font']['rotation_anchor_x'][0]
-        rotation_anchor_y = kwargs['font']['rotation_anchor_y'][0]
-        border_width = kwargs['font']['border_width'][0]
-        shadow_offset_x = kwargs['font']['shadow_offset_x'][0]
+        # Defensive: every font prop may be either a constant value
+        # (passed through) or a (value, animation_reset) tuple from
+        # text_graphic_element. `_font_prop` unwraps both shapes with
+        # a sensible default. This avoids NameError crashes when an
+        # older version of Font Properties omits a field.
+        def _font_prop(name, default=0):
+            raw = kwargs.get('font', {}).get(name, default)
+            if isinstance(raw, tuple):
+                return raw[0] if raw[0] is not None else default
+            return raw if raw is not None else default
+
+        rotation_anchor_x = _font_prop('rotation_anchor_x', 0)
+        rotation_anchor_y = _font_prop('rotation_anchor_y', 0)
+        border_width = _font_prop('border_width', 0)
+        # Both shadow offsets are needed when sizing the overlay so a
+        # rotated text block isn't clipped on the Y axis.
+        shadow_offset_x = _font_prop('shadow_offset_x', 0)
+        shadow_offset_y = _font_prop('shadow_offset_y', 0)
 
         # Create a larger canvas with the prepared image as the background
         orig_width, orig_height = image.size
@@ -390,7 +404,8 @@ class font2img:
 
         # Calculate text size without tags for accurate kerning
         visible_chars = self.remove_tags(text)
-        total_kerning_width = sum(font.getlength(char) + kwargs['font']['kerning'][0] for char in visible_chars) - kwargs['font']['kerning'][0] * len(visible_chars) if len(visible_chars) > 0 else 0
+        kerning = _font_prop('kerning', 0)
+        total_kerning_width = sum(font.getlength(char) + kerning for char in visible_chars) - kerning * len(visible_chars) if len(visible_chars) > 0 else 0
 
         overlay = Image.new('RGBA', (int(text_block_width + border_width * 2 + shadow_offset_x + total_kerning_width), int(text_block_height + border_width * 2 + shadow_offset_y)), (255, 255, 255, 0))
         draw_overlay = ImageDraw.Draw(overlay)

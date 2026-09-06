@@ -49,6 +49,7 @@ def ensure_opencv() -> None:
         )
         # Prefer headless in containers / servers; fall back to full
         # package for users who already have a desktop install.
+        last_exc: Exception | None = None
         for pkg in ("opencv-python-headless", "opencv-python"):
             try:
                 subprocess.check_call(pip_prefix + [pkg])
