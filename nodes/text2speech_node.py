@@ -23,8 +23,27 @@ def _get_bark_pipeline():
     return immediately. The user can also pre-place the
     HuggingFace cache structure there manually to skip the download.
     """
+    from ..helpers.logger import logger
     cache_dir = get_feature_models_dir("TextToSpeech")
-    return pipeline("text-to-speech", BARK_MODEL_ID, cache_dir=cache_dir)
+    try:
+        return pipeline("text-to-speech", BARK_MODEL_ID, cache_dir=cache_dir)
+    except Exception as e:
+        # Same playbook as wav2vec2: give the user the exact URL +
+        # exact local path so they can fix it without grepping docs.
+        snapshot_dir = f"{cache_dir}{os.sep}models--suno--bark{os.sep}snapshots{os.sep}<hash>"
+        logger().error(
+            "Failed to load Bark model: %s\n"
+            "Automatic download failed. To fix manually:\n"
+            "  1. Open https://huggingface.co/suno/bark in a browser\n"
+            "  2. Download all files (config.json, *.safetensors, "
+            "*.json, tokenizer files, vocab files)\n"
+            "  3. Create the directory:\n"
+            "       %s\n"
+            "  4. Drop the downloaded files into that directory\n"
+            "  5. Re-run the node",
+            e, snapshot_dir,
+        )
+        raise
 
 
 class text2speech:

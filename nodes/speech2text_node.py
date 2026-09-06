@@ -109,7 +109,9 @@ def _load_wav2vec2(model_id: str) -> tuple:
     Weights go under <ComfyUI>/models/Mana/SpeechRecognition/
     (see helpers.models.get_feature_models_dir). The user can
     pre-place the HuggingFace cache structure there manually to
-    skip the download.
+    skip the download — useful when the box has no internet, has
+    a slow link, or sits behind a firewall that blocks
+    huggingface.co.
     """
     from ..helpers.models import get_feature_models_dir, list_cached_models
     from ..helpers.logger import logger
@@ -121,18 +123,42 @@ def _load_wav2vec2(model_id: str) -> tuple:
     # means the actual download happens at most once per model_id).
     existing = list_cached_models("SpeechRecognition")
     if not existing:
+        org, name = model_id.split("/", 1) if "/" in model_id else ("", model_id)
+        snapshot_dir = f"{cache_dir}{os.sep}models--{org}--{name}{os.sep}snapshots{os.sep}<hash>"
         logger().info(
-            "Mana models dir %s is empty; %s will be downloaded on "
-            "first use. To skip the download, place the HuggingFace "
-            "cache (models--<org>--<name>/snapshots/<hash>/...) in "
-            "this directory before running.",
-            cache_dir, model_id,
+            "Mana models dir %s is empty; %s will be downloaded "
+            "on first use. If the download fails (firewall / slow "
+            "link / no internet), download manually from "
+            "https://huggingface.co/%s and place all files in:\n"
+            "  %s",
+            cache_dir, model_id, model_id, snapshot_dir,
         )
 
-    return (
-        Wav2Vec2ForCTC.from_pretrained(model_id, cache_dir=cache_dir),
-        Wav2Vec2Processor.from_pretrained(model_id, cache_dir=cache_dir),
-    )
+    try:
+        return (
+            Wav2Vec2ForCTC.from_pretrained(model_id, cache_dir=cache_dir),
+            Wav2Vec2Processor.from_pretrained(model_id, cache_dir=cache_dir),
+        )
+    except Exception as e:
+        # Network failure, firewall, missing local cache, etc. Print
+        # a clear error pointing the user at the exact HuggingFace
+        # URL and the local path to drop the weights into. Without
+        # this, the user sees a stack trace and has to guess.
+        from ..helpers.models import MANA_MODELS_DIR
+        logger().error(
+            "Failed to load wav2vec2 model '%s': %s\n"
+            "Automatic download failed. To fix manually:\n"
+            "  1. Open https://huggingface.co/%s in a browser\n"
+            "  2. Click 'Files and versions' -> download all files "
+            "(config.json, model.safetensors, *.json, vocab.json)\n"
+            "  3. Create the directory:\n"
+            "       %s/models--%s/snapshots/<any-hash>/\n"
+            "  4. Drop the downloaded files into that directory\n"
+            "  5. Re-run the node",
+            model_id, e, model_id, MANA_MODELS_DIR,
+            model_id.split("/")[0] if "/" in model_id else model_id,
+        )
+        raise
 
 
 class speech2text:
