@@ -63,6 +63,27 @@ app.registerExtension({
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
         if (nodeData.name !== "Speech Recognition") return;
 
+        // Pick a sensible default model based on the browser's
+        // preferred language. Falls back to English (which is also
+        // the first item in DEFAULT_WAV2VEC2_MODELS) for any locale
+        // we don't have a specific model for.
+        const browserLang = (navigator.language || "en").toLowerCase();
+        const LOCALE_TO_MODEL = {
+            "zh": "jonatasgrosman/wav2vec2-large-xlsr-53-chinese-zh-cn",
+            "ja": "jonatasgrosman/wav2vec2-large-xlsr-53-japanese",
+            "ko": "jonatasgrosman/wav2vec2-large-xlsr-53-korean",
+            "es": "jonatasgrosman/wav2vec2-large-xlsr-53-spanish",
+            "fr": "jonatasgrosman/wav2vec2-large-xlsr-53-french",
+            "de": "jonatasgrosman/wav2vec2-large-xlsr-53-german",
+            "it": "jonatasgrosman/wav2vec2-large-xlsr-53-italian",
+            "pt": "jonatasgrosman/wav2vec2-large-xlsr-53-portuguese",
+            "ru": "jonatasgrosman/wav2vec2-large-xlsr-53-russian",
+            "ar": "jonatasgrosman/wav2vec2-large-xlsr-53-arabic",
+        };
+        const langPrefix = browserLang.split("-")[0];
+        const defaultModel = LOCALE_TO_MODEL[langPrefix] || "jonatasgrosman/wav2vec2-large-xlsr-53-english";
+        const defaultSpell = LANGUAGE_TO_SPELL_CHECK[MODEL_LANGUAGES[defaultModel]] || "English";
+
         // We need to wait for the node to be created before we can
         // touch its widgets. Chain onNodeCreated so we run after
         // the default widget wiring.
@@ -73,6 +94,17 @@ app.registerExtension({
             const spellWidget = this.widgets.find((w) => w.name === "spell_check_language");
             const upperWidget = this.widgets.find((w) => w.name === "uppercase");
             if (!modelWidget || !spellWidget) return;
+
+            // First-time setup: pick a default that matches the
+            // browser locale. Skip if the user has already saved a
+            // value (workflow was loaded).
+            if (!modelWidget.value || modelWidget.value === "jonatasgrosman/wav2vec2-large-xlsr-53-english") {
+                // Only override if the value is the hard-coded English default
+                if (this.widgets_values && this.widgets_values.length === 0) {
+                    modelWidget.value = defaultModel;
+                    spellWidget.value = defaultSpell;
+                }
+            }
 
             // 1. Build a small language badge so the user can see
             //    which language the currently-selected model covers

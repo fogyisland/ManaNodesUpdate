@@ -21,15 +21,19 @@ from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
 # "currently selected: Mandarin Chinese" indicator next to the
 # spell_check_language default.
 DEFAULT_WAV2VEC2_MODELS: tuple[str, ...] = (
-    "jonatasgrosman/wav2vec2-large-xlsr-53-chinese-zh-cn",
-    "facebook/wav2vec2-large-xlsr-53-chinese-zh-cn",
-    "facebook/mms-1b-all",
-    "facebook/mms-1b-fl102",
+    # English (DEFAULT — most common; this is what [0] picks)
     "jonatasgrosman/wav2vec2-large-xlsr-53-english",
     "facebook/wav2vec2-base-960h",
     "facebook/wav2vec2-large-960h-lv60-self",
+    # Multilingual (good fallback when language unknown)
+    "facebook/mms-1b-all",
+    "facebook/mms-1b-fl102",
+    # CJK
+    "jonatasgrosman/wav2vec2-large-xlsr-53-chinese-zh-cn",
+    "facebook/wav2vec2-large-xlsr-53-chinese-zh-cn",
     "jonatasgrosman/wav2vec2-large-xlsr-53-japanese",
     "jonatasgrosman/wav2vec2-large-xlsr-53-korean",
+    # European
     "jonatasgrosman/wav2vec2-large-xlsr-53-spanish",
     "jonatasgrosman/wav2vec2-large-xlsr-53-french",
     "jonatasgrosman/wav2vec2-large-xlsr-53-german",
@@ -143,13 +147,13 @@ class speech2text:
                 "spell_check_language": (SPELL_CHECK_LANGUAGES, {"default": "English", "display": "dropdown"}),  # default set later based on wav2vec2 model selection
                 "framestamps_max_chars": ("INT", {"default": 25, "step": 1, "display": "number"}),
                 "fps": ("INT", {"default": 30, "min": 1, "max": 60, "step": 1}),
-                "transcription_mode": (TRANSCRIPTION_MODES, {"default": "fill", "display": "dropdown"}),
+                "transcription_mode": (TRANSCRIPTION_MODES, {"default": "line", "display": "dropdown"}),
                 "uppercase": ("BOOLEAN", {"default": True}),
             }
         }
 
     def run(self, audio_file, wav2vec2_model: str, spell_check_language: str,
-            framestamps_max_chars: int, fps: int = 30, transcription_mode: str = "fill",
+            framestamps_max_chars: int, fps: int = 30, transcription_mode: str = "line",
             uppercase: bool = True, **_):
         audio = _load_audio(audio_file)
         words = self._transcribe(audio, wav2vec2_model)
