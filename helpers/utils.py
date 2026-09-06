@@ -1,54 +1,96 @@
-import sys
-import torch
-import numpy as np
+"""Shared utilities for Mana Nodes."""
+from __future__ import annotations
+
 import subprocess
+import sys
+from typing import Iterable
+
+import numpy as np
+import torch
 from PIL import Image
 from torch.nn.functional import pad
 
-# Tensor to PIL
-def tensor2pil(image):
-    return Image.fromarray(np.clip(255.0 * image.cpu().numpy().squeeze(), 0, 255).astype(np.uint8))
+
+# --------------------------------------------------------------------------- #
+# Tensor <-> PIL                                                              #
+# --------------------------------------------------------------------------- #
+def tensor2pil(image: torch.Tensor) -> Image.Image:
+    """Convert a ComfyUI IMAGE tensor (H,W,C float in 0..1) to a PIL image."""
+    arr = np.clip(255.0 * image.cpu().numpy().squeeze(), 0, 255).astype(np.uint8)
+    return Image.fromarray(arr)
 
 
-# Convert PIL to Tensor
-def pil2tensor(image):
-    return torch.from_numpy(np.array(image).astype(np.float32) / 255.0).unsqueeze(0)
+def pil2tensor(image: Image.Image) -> torch.Tensor:
+    """Convert a PIL image to a ComfyUI IMAGE tensor (1,H,W,C float in 0..1)."""
+    arr = np.asarray(image).astype(np.float32) / 255.0
+    return torch.from_numpy(arr).unsqueeze(0)
 
-def ensure_opencv():
-    if "python_embeded" in sys.executable or "python_embedded" in sys.executable:
-        pip_install = [sys.executable, "-s", "-m", "pip", "install"]
-    else:
-        pip_install = [sys.executable, "-m", "pip", "install"]
+
+# --------------------------------------------------------------------------- #
+# OpenCV self-install                                                          #
+# --------------------------------------------------------------------------- #
+def ensure_opencv() -> None:
+    """Make sure cv2 is importable. Try a one-shot pip install if not.
+
+    Idempotent: subsequent calls return immediately. Surfaces a clear
+    error if the install fails rather than silently printing and
+    crashing later in cv2.VideoCapture.
+    """
+    if getattr(ensure_opencv, "_cv2_ok", False):
+        return
 
     try:
-        import cv2
-    except Exception as e:
-        try:
-            subprocess.check_call(pip_install + ['opencv-python'])
-        except:
-            print('failed import cv2')
+        import cv2  # noqa: F401
+    except ImportError:
+        pip_prefix = (
+            [sys.executable, "-s", "-m", "pip", "install"]
+            if "python_embedded" in sys.executable
+            else [sys.executable, "-m", "pip", "install"]
+        )
+        # Prefer headless in containers / servers; fall back to full
+        # package for users who already have a desktop install.
+        for pkg in ("opencv-python-headless", "opencv-python"):
+            try:
+                subprocess.check_call(pip_prefix + [pkg])
+                break
+            except Exception as exc:
+                last_exc = exc
+        else:
+            raise RuntimeError(
+                "Failed to install opencv. Run `pip install opencv-python-headless` manually."
+            ) from last_exc
 
-def stack_audio_tensors(tensors, mode="pad"):
-    # assert all(len(x.shape) == 2 for x in tensors)
-    sizes = [x.shape[-1] for x in tensors]
+    ensure_opencv._cv2_ok = True
 
+
+# --------------------------------------------------------------------------- #
+# Audio batching                                                               #
+# --------------------------------------------------------------------------- #
+def stack_audio_tensors(tensors: Iterable[torch.Tensor], mode: str = "pad") -> torch.Tensor:
+    """Stack audio tensors (channels, samples) to a common length.
+
+    Modes:
+        pad / pad_r / pad_l : zero-pad shorter tensors
+        trunc / trunc_r / trunc_l : truncate to the shortest
+    """
+    tensors = list(tensors)
+    if not tensors:
+        raise ValueError("stack_audio_tensors requires at least one tensor")
+
+    sizes = [t.shape[-1] for t in tensors]
     if mode in {"pad_l", "pad_r", "pad"}:
-        # pad input tensors to be equal length
-        dst_size = max(sizes)
-        stack_tensors = (
-            [pad(x, pad=(0, dst_size - x.shape[-1])) for x in tensors]
-            if mode == "pad_r"
-            else [pad(x, pad=(dst_size - x.shape[-1], 0)) for x in tensors]
-        )
-    elif mode in {"trunc_l", "trunc_r", "trunc"}:
-        # truncate input tensors to be equal length
-        dst_size = min(sizes)
-        stack_tensors = (
-            [x[:, x.shape[-1] - dst_size:] for x in tensors]
-            if mode == "trunc_r"
-            else [x[:, :dst_size] for x in tensors]
-        )
-    else:
-        assert False, 'unknown mode "{pad}"'
+        target = max(sizes)
+        left_pad = mode == "pad_l"
+        return torch.stack([
+            pad(t, pad=(target - t.shape[-1], 0) if left_pad else (0, target - t.shape[-1]))
+            for t in tensors
+        ])
+    if mode in {"trunc_l", "trunc_r", "trunc"}:
+        target = min(sizes)
+        right = mode == "trunc_r"
+        return torch.stack([
+            t[:, t.shape[-1] - target:] if right else t[:, :target]
+            for t in tensors
+        ])
 
-    return torch.stack(stack_tensors)
+    raise ValueError(f"unknown stack_audio_tensors mode: {mode!r}")

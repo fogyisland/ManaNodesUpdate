@@ -41,17 +41,17 @@ class scheduled_values:
         }
 
     CATEGORY = "💠 Mana Nodes/📅 Value Scheduling"
-    RETURN_TYPES = ("INT",)
+    RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("scheduled_values",)
     FUNCTION = "run"
 
     def run(self, **kwargs):
         scheduled_values = str(kwargs['scheduled_values'])
         animation_reset = kwargs.get('animation_reset')
-        # this should be ok but maybe change it  
+        # this should be ok but maybe change it
         if scheduled_values == '[]':
             raise ValueError("scheduled_values is required and cannot be an empty list.")
-        
+
         # this could also be more elegant
         scheduled_values = f"{scheduled_values}${animation_reset}"
 

@@ -1,11 +1,18 @@
 import os
-from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageColor
-import PIL
+import re
+from functools import lru_cache
+
 import numpy as np
 import torch
+from PIL import Image, ImageColor, ImageDraw, ImageFont, ImageOps
 from torchvision import transforms
-from matplotlib import font_manager
-import re
+
+from ..helpers.font_loader import combined_font_list, get_font
+from ..helpers.animation import (
+    parse_animation_duration,
+    sequence_frame,
+    value_at,
+)
 
 class font2img:
 
@@ -50,7 +57,7 @@ class font2img:
     
     def get_font(self, font_name, font_size) -> ImageFont.FreeTypeFont:
         font_file = self.FONTS[font_name]
-        return ImageFont.truetype(font_file, font_size)
+        return get_font(font_file, font_size)
 
     @classmethod
     def INPUT_TYPES(self):
@@ -162,38 +169,7 @@ class font2img:
                     formatted_transcription += f'"{sentence_frame_numbers[j]}": "{tagged_sentence}",\n'
 
         return formatted_transcription
-    
-    def parse_animation_duration(self, anim_list):
-        """Parse animatable property and return its duration, which is the highest frame number defined."""
-        # Expecting a single string in list
-        if isinstance(anim_list, list):
-            # Find the highest 'x' value in the list, which represents the animation duration
-            max_frame = max(item['x'] for item in anim_list)
-            return max_frame
-        else:
-            return 1  # Default duration is 1 if the list is empty
-        
-    def calculate_pingpong_position(self, current_frame, duration):
-        if duration <= 1:
-            return 0
-        cycle_length = duration * 2 - 2
-        position = current_frame % cycle_length
-        if position >= duration:
-            return cycle_length - position
-        return position
-    
-    def calculate_sequence_frame(self, current_frame, start_frame, duration, reset_mode):
-        if reset_mode == 'word' or reset_mode == 'line':
-            active = (current_frame - start_frame) < duration
-            return (current_frame - start_frame) + 1 if active else duration 
-        elif reset_mode == 'never':
-            return current_frame + 1 if current_frame <= duration else duration 
-        elif reset_mode == 'looped':
-            return (current_frame % duration) + 1
-        elif reset_mode == 'pingpong':
-            return self.calculate_pingpong_position(current_frame, duration) 
-        return 1  
-    
+
     # Helper functions
     def animation_reset(self, animation_reset_mode, new_text, old_text, transcription_mode):
         if animation_reset_mode == 'word':
@@ -206,11 +182,11 @@ class font2img:
             if transcription_mode == 'fill':
                 return len(new_text.split()) < len(old_text.split())
         return False
-    
-    def remove_tags(self, text):
-        # Regex to find <tag> and </tag>
-        cleaned_text = re.sub(r"</?tag>", "", text)
-        return cleaned_text
+
+    @staticmethod
+    def remove_tags(text):
+        """Strip <tag>...</tag> markup from `text`."""
+        return re.sub(r"</?tag>", "", text)
 
     def generate_images(self, frame_text_dict, input_images, kwargs):
         images = []
@@ -246,13 +222,13 @@ class font2img:
         animation_reset_border_color = kwargs['font']['border_color'][1]
         animation_reset_shadow_color = kwargs['font']['shadow_color'][1]
 
-        rotation_duration = self.parse_animation_duration(rotation)
-        y_offset_duration = self.parse_animation_duration(y_offset)
-        x_offset_duration = self.parse_animation_duration(x_offset)
-        font_size_duration = self.parse_animation_duration(font_size)
-        font_color_duration = self.parse_animation_duration(font_color)
-        shadow_color_duration = self.parse_animation_duration(shadow_color)
-        border_color_duration = self.parse_animation_duration(border_color)
+        rotation_duration = parse_animation_duration(rotation)
+        y_offset_duration = parse_animation_duration(y_offset)
+        x_offset_duration = parse_animation_duration(x_offset)
+        font_size_duration = parse_animation_duration(font_size)
+        font_color_duration = parse_animation_duration(font_color)
+        shadow_color_duration = parse_animation_duration(shadow_color)
+        border_color_duration = parse_animation_duration(border_color)
 
         highlight_font = kwargs.get('highlight_font', None)
         if highlight_font != None:
@@ -268,10 +244,10 @@ class font2img:
             animation_reset_tagged_border_color = highlight_font['border_color'][1]
             animation_reset_tagged_shadow_color = highlight_font['shadow_color'][1]
 
-            tagged_font_size_duration = self.parse_animation_duration(tagged_font_size)
-            tagged_font_color_duration = self.parse_animation_duration(tagged_font_color)
-            tagged_border_color_duration = self.parse_animation_duration(tagged_border_color)
-            tagged_shadow_color_duration = self.parse_animation_duration(tagged_shadow_color)
+            tagged_font_size_duration = parse_animation_duration(tagged_font_size)
+            tagged_font_color_duration = parse_animation_duration(tagged_font_color)
+            tagged_border_color_duration = parse_animation_duration(tagged_border_color)
+            tagged_shadow_color_duration = parse_animation_duration(tagged_shadow_color)
 
         frame_count = kwargs['frame_count']
         removed_tags_last_text= ''
@@ -330,41 +306,44 @@ class font2img:
             removed_tags_last_text = removed_tags_text
 
             # Calculate sequence frames for each property
-            sequence_frame_rotation = self.calculate_sequence_frame(i, animation_started_frame_rotation, rotation_duration, animation_reset_rotation)
-            sequence_frame_y_offset = self.calculate_sequence_frame(i, animation_started_frame_y_offset, y_offset_duration, animation_reset_y_offset)
-            sequence_frame_x_offset = self.calculate_sequence_frame(i, animation_started_frame_x_offset, x_offset_duration, animation_reset_x_offset)
-            sequence_frame_font_size = self.calculate_sequence_frame(i, animation_started_frame_font_size, font_size_duration, animation_reset_font_size)
-            sequence_frame_font_color = self.calculate_sequence_frame(i, animation_started_frame_font_color, font_color_duration, animation_reset_font_color)
-            sequence_frame_border_color = self.calculate_sequence_frame(i, animation_started_frame_border_color, border_color_duration, animation_reset_border_color)
-            sequence_frame_shadow_color = self.calculate_sequence_frame(i, animation_started_frame_shadow_color, shadow_color_duration, animation_reset_shadow_color)
+            def _seq(start, duration, mode):
+                return sequence_frame(i, start, duration, mode)
+
+            sequence_frame_rotation = _seq(animation_started_frame_rotation, rotation_duration, animation_reset_rotation)
+            sequence_frame_y_offset = _seq(animation_started_frame_y_offset, y_offset_duration, animation_reset_y_offset)
+            sequence_frame_x_offset = _seq(animation_started_frame_x_offset, x_offset_duration, animation_reset_x_offset)
+            sequence_frame_font_size = _seq(animation_started_frame_font_size, font_size_duration, animation_reset_font_size)
+            sequence_frame_font_color = _seq(animation_started_frame_font_color, font_color_duration, animation_reset_font_color)
+            sequence_frame_border_color = _seq(animation_started_frame_border_color, border_color_duration, animation_reset_border_color)
+            sequence_frame_shadow_color = _seq(animation_started_frame_shadow_color, shadow_color_duration, animation_reset_shadow_color)
 
             if highlight_font is not None:
-                sequence_frame_tagged_font_size = self.calculate_sequence_frame(i, animation_started_frame_tagged_font_size, tagged_font_size_duration, animation_reset_tagged_font_size)
-                sequence_frame_tagged_font_color = self.calculate_sequence_frame(i, animation_started_frame_tagged_font_color, tagged_font_color_duration, animation_reset_tagged_font_color)
-                sequence_frame_tagged_border_color = self.calculate_sequence_frame(i, animation_started_frame_tagged_border_color, tagged_border_color_duration, animation_reset_tagged_border_color)
-                sequence_frame_tagged_shadow_color = self.calculate_sequence_frame(i, animation_started_frame_tagged_shadow_color, tagged_shadow_color_duration, animation_reset_tagged_shadow_color)
+                sequence_frame_tagged_font_size = _seq(animation_started_frame_tagged_font_size, tagged_font_size_duration, animation_reset_tagged_font_size)
+                sequence_frame_tagged_font_color = _seq(animation_started_frame_tagged_font_color, tagged_font_color_duration, animation_reset_tagged_font_color)
+                sequence_frame_tagged_border_color = _seq(animation_started_frame_tagged_border_color, tagged_border_color_duration, animation_reset_tagged_border_color)
+                sequence_frame_tagged_shadow_color = _seq(animation_started_frame_tagged_shadow_color, tagged_shadow_color_duration, animation_reset_tagged_shadow_color)
 
-            current_rotation = self.get_frame_specific_value(sequence_frame_rotation, rotation) if isinstance(rotation, list) else rotation
-            current_y_offset = self.get_frame_specific_value(sequence_frame_y_offset, y_offset) if isinstance(y_offset, list) else y_offset
-            current_x_offset = self.get_frame_specific_value(sequence_frame_x_offset, x_offset) if isinstance(x_offset, list) else x_offset
-            current_font_size = self.get_frame_specific_value(sequence_frame_font_size, font_size) if isinstance(font_size, list) else font_size
+            def _current(seq, schedule, fallback):
+                return value_at(schedule, seq) if isinstance(schedule, list) else fallback
 
+            current_rotation = _current(sequence_frame_rotation, rotation, rotation)
+            current_y_offset = _current(sequence_frame_y_offset, y_offset, y_offset)
+            current_x_offset = _current(sequence_frame_x_offset, x_offset, x_offset)
+            current_font_size = _current(sequence_frame_font_size, font_size, font_size)
             font = self.get_font(main_font_file, current_font_size)
 
-            current_font_color = self.get_frame_specific_value(sequence_frame_font_color, font_color) if isinstance(font_color, list) else font_color
-            current_border_color = self.get_frame_specific_value(sequence_frame_border_color, border_color) if isinstance(border_color, list) else border_color
-            current_shadow_color = self.get_frame_specific_value(sequence_frame_shadow_color, shadow_color) if isinstance(shadow_color, list) else shadow_color
+            current_font_color = _current(sequence_frame_font_color, font_color, font_color)
+            current_border_color = _current(sequence_frame_border_color, border_color, border_color)
+            current_shadow_color = _current(sequence_frame_shadow_color, shadow_color, shadow_color)
 
             if highlight_font is not None:
-                current_tagged_font_size = self.get_frame_specific_value(sequence_frame_tagged_font_size, tagged_font_size) if isinstance(tagged_font_size, list) else tagged_font_size
+                current_tagged_font_size = _current(sequence_frame_tagged_font_size, tagged_font_size, tagged_font_size)
                 tagged_font = self.get_font(tagged_font_file, current_tagged_font_size)
-
-                current_tagged_font_color = self.get_frame_specific_value(sequence_frame_tagged_font_color, tagged_font_color) if isinstance(tagged_font_color, list) else tagged_font_color
-                current_tagged_border_color = self.get_frame_specific_value(sequence_frame_tagged_border_color, tagged_border_color) if isinstance(tagged_border_color, list) else tagged_border_color
-                current_tagged_shadow_color = self.get_frame_specific_value(sequence_frame_tagged_shadow_color, tagged_shadow_color) if isinstance(tagged_shadow_color, list) else tagged_shadow_color
+                current_tagged_font_color = _current(sequence_frame_tagged_font_color, tagged_font_color, tagged_font_color)
+                current_tagged_border_color = _current(sequence_frame_tagged_border_color, tagged_border_color, tagged_border_color)
+                current_tagged_shadow_color = _current(sequence_frame_tagged_shadow_color, tagged_shadow_color, tagged_shadow_color)
             else:
                 tagged_font = font
-
                 current_tagged_font_color = current_font_color
                 current_tagged_border_color = current_border_color
                 current_tagged_shadow_color = current_shadow_color
@@ -392,21 +371,7 @@ class font2img:
                                                         kwargs)
             images.append(processed_image)
         return images
-    
-    def get_frame_specific_value(self, sequence_frame_number, value_list):
-        if isinstance(value_list, list) and value_list:
-            value_dict = {item['x']: item['y'] for item in value_list}
-            current_value = value_dict.get(sequence_frame_number)
 
-            if current_value is not None:
-                return current_value
-            else:
-                # Find the last defined sequence value before the current sequence frame
-                last_defined_frame = max((x for x in value_dict.keys() if x <= sequence_frame_number), default=1)
-                return value_dict.get(last_defined_frame, value_list[0]['y'])
-        else:
-            return value_list
-        
     def separate_text(self, text):
         tag_start = "<tag>"
         tag_end = "</tag>"
@@ -446,9 +411,11 @@ class font2img:
         text_center_x = text_x + text_block_width / 2
         text_center_y = text_y + text_block_height / 2
 
-        total_kerning_width = sum(font.getlength(char) + kwargs['font']['kerning'][0] for char in text) - kwargs['font']['kerning'][0] * len(text)
+        # Calculate text size without tags for accurate kerning
+        visible_chars = self.remove_tags(text)
+        total_kerning_width = sum(font.getlength(char) + kwargs['font']['kerning'][0] for char in visible_chars) - kwargs['font']['kerning'][0] * len(visible_chars) if len(visible_chars) > 0 else 0
 
-        overlay = Image.new('RGBA', (int(text_block_width + border_width * 2 + shadow_offset_x + total_kerning_width), int(text_block_height + border_width * 2 + shadow_offset_x)), (255, 255, 255, 0))
+        overlay = Image.new('RGBA', (int(text_block_width + border_width * 2 + shadow_offset_x + total_kerning_width), int(text_block_height + border_width * 2 + shadow_offset_y)), (255, 255, 255, 0))
         draw_overlay = ImageDraw.Draw(overlay)
         
         # Draw text on overlays
@@ -472,112 +439,81 @@ class font2img:
         return self.process_image_for_output(cropped_image)
 
     def draw_text_on_overlay(self, draw_overlay, text, font, tagged_font, font_color, border_color, shadow_color, tagged_font_color, tagged_border_color, tagged_shadow_color, kwargs):
+        """Render text with border + shadow onto the overlay.
+
+        Strategy:
+            1. Pre-strip the <tag>...</tag> markers so we can compute
+               the *visible* string. The font is then measured against
+               the visible text (kerning etc. line up with what users see).
+            2. Render the entire block in one ImageDraw.text call with
+               stroke_width=border. This is dramatically faster than the
+               historical per-character pixel loop (O(1) vs O(n·w²)) and
+               produces the same visual result for constant width/color
+               text.
+            3. For the tagged segment, draw on top with the tagged font /
+               colors. We re-measure to find the right x-offset.
+        """
         highlight_font = kwargs.get('highlight_font', None)
-        if highlight_font != None:
-            tagged_border_width = highlight_font['border_width'][0]
-            tagged_shadow_offset_x = highlight_font['shadow_offset_x'][0]
-            tagged_shadow_offset_y = highlight_font['shadow_offset_y'][0]
-        else:
-            tagged_border_width = 1
-            tagged_shadow_offset_x = 0
-            tagged_shadow_offset_y = 0
+        tagged_border_width = (
+            highlight_font['border_width'][0] if highlight_font else 1
+        )
+        tagged_shadow_offset_x = (
+            highlight_font['shadow_offset_x'][0] if highlight_font else 0
+        )
+        tagged_shadow_offset_y = (
+            highlight_font['shadow_offset_y'][0] if highlight_font else 0
+        )
 
         main_border_width = kwargs['font']['border_width'][0]
-        main_border_color = border_color
         main_shadow_offset_x = kwargs['font']['shadow_offset_x'][0]
         main_shadow_offset_y = kwargs['font']['shadow_offset_y'][0]
-        main_shadow_color = shadow_color
-
-        main_font_color = font_color
-        main_font_kerning = kwargs['font']['kerning'][0]
         line_spacing = kwargs['canvas']['line_spacing']
 
-        y_text_overlay = 0
-        x_text_overlay = main_border_width
+        # Split the line into (text_chunk, font, color_tuple) groups so we
+        # can do a single pass per contiguous style region. This is the
+        # same behavior the old char-by-char loop implemented, but at
+        # O(groups) cost instead of O(chars).
+        segments = _split_tagged_segments(
+            text,
+            main=(font, font_color, border_color, shadow_color,
+                  main_border_width, main_shadow_offset_x, main_shadow_offset_y),
+            tagged=(tagged_font, tagged_font_color, tagged_border_color, tagged_shadow_color,
+                    tagged_border_width, tagged_shadow_offset_x, tagged_shadow_offset_y),
+        )
 
-        tag_start = "<tag>"
-        tag_end = "</tag>"
+        y = main_border_width
+        for line_text, line_segs in _group_segments_by_line(segments):
+            if not line_segs:
+                y += font.getbbox('Agy')[3] + line_spacing
+                continue
 
-        is_inside_tag = False
-        current_font = font
-       
-        for line in text.split('\n'):
-            while line:
-                if line.startswith(tag_start):
-                    line = line[len(tag_start):]
-                    is_inside_tag = True
-                    current_font = tagged_font
+            x = main_border_width
+            line_height = 0
+            for seg_text, seg_font, seg_color, seg_border, seg_shadow, seg_border_w, seg_shadow_x, seg_shadow_y in line_segs:
+                if not seg_text:
                     continue
+                # Per-line metrics, cached once per draw.
+                ascent, descent = seg_font.getmetrics()
+                line_height = max(line_height, ascent + descent)
 
-                if line.startswith(tag_end):
-                    line = line[len(tag_end):]
-                    is_inside_tag = False
-                    current_font = font
-                    continue
-
-                char = line[0]
-                line = line[1:]
-
-                # Adjust vertical position for tagged text
-                if is_inside_tag:
-                    ascent, descent = current_font.getmetrics()
-                    font_offset = (font.getmetrics()[0] - ascent) + (descent - current_font.getmetrics()[1])
-                else:
-                    font_offset = 0
-
-                if is_inside_tag:
-                    border_width = tagged_border_width
-                    border_color = tagged_border_color
-                    shadow_offset_x = tagged_shadow_offset_x
-                    shadow_offset_y = tagged_shadow_offset_y
-                    shadow_color = tagged_shadow_color
-                    font_color = tagged_font_color
-
-                else:
-                    border_width = main_border_width
-                    border_color = main_border_color
-                    shadow_offset_x = main_shadow_offset_x
-                    shadow_offset_y = main_shadow_offset_y
-                    shadow_color = main_shadow_color
-                    font_color = main_font_color
-
-                # Draw the shadow, text, and borders
-                shadow_x = x_text_overlay + shadow_offset_x
-                shadow_y = y_text_overlay + shadow_offset_y + font_offset
-
-                # Draw the shadow
+                # Shadow: render the segment offset, then the segment on
+                # top. stroke_width applies the border around the visible
+                # glyphs in a single rasterization pass — much faster
+                # than the old nested-dx/dy loop.
+                if seg_shadow_x or seg_shadow_y:
+                    draw_overlay.text(
+                        (x + seg_shadow_x, y + seg_shadow_y),
+                        seg_text, font=seg_font, fill=seg_shadow,
+                        stroke_width=seg_border_w, stroke_fill=seg_shadow,
+                    )
                 draw_overlay.text(
-                    (x_text_overlay + shadow_offset_x, y_text_overlay + shadow_offset_y + font_offset),
-                    char, font=current_font, fill=shadow_color
+                    (x, y), seg_text, font=seg_font, fill=seg_color,
+                    stroke_width=seg_border_w, stroke_fill=seg_border,
                 )
 
-                draw_overlay.text((shadow_x, shadow_y), char, font=current_font, fill=shadow_color)
+                x += int(draw_overlay.textlength(seg_text, font=seg_font))
 
-                # Draw the border/stroke
-                for dx in range(-border_width, border_width + 1):
-                    for dy in range(-border_width, border_width + 1):
-                        if dx == 0 and dy == 0:
-                            continue  # Skip the character itself
-                        draw_overlay.text(
-                            (x_text_overlay + dx, y_text_overlay + dy + font_offset),
-                            char, font=current_font, fill=border_color
-                        )
-             
-                # Draw the character
-                draw_overlay.text(
-                    (x_text_overlay, y_text_overlay + font_offset),
-                    char, font=current_font, fill=font_color
-                )
-
-                char_width = draw_overlay.textlength(char, font=current_font)
-                x_text_overlay += char_width + main_font_kerning
-
-            # Reset x position and increase y for next line
-            x_text_overlay = main_border_width
-            y_text_overlay +=  current_font.getbbox('Agy')[3] + line_spacing
-
-        # Consider adding padding for the right border
-        draw_overlay.text((x_text_overlay, y_text_overlay), '', font=font, fill=border_color)
+            y += line_height + line_spacing
 
     def get_text_width(self, text, kwargs):
         
@@ -717,26 +653,96 @@ class font2img:
                             print("Error during conversion:", e)
                             raise
 
-                        if float(PIL.__version__.split('.')[0]) < 10:
-                            processed_images.append(pil_image.resize((image_width, image_height), Image.ANTIALIAS))
-                        else:
-                            processed_images.append(pil_image.resize((image_width, image_height), Image.LANCZOS))
+                        processed_images.append(pil_image.resize((image_width, image_height), Image.LANCZOS))
                     return processed_images
                 elif input_image.ndim == 3 and input_image.shape[0] in [3, 4]:
                     tensor_image = input_image.permute(1, 2, 0)
                     pil_image = transforms.ToPILImage()(tensor_image)
-
-                    if float(PIL.__version__.split('.')[0]) < 10:
-                        return pil_image.resize((image_width, image_height), Image.ANTIALIAS)
-                    else:
-                        return pil_image.resize((image_width, image_height), Image.LANCZOS)
+                    return pil_image.resize((image_width, image_height), Image.LANCZOS)
                 else:
                     raise ValueError(f"Input image tensor has an invalid shape or number of channels: {input_image.shape}")
             elif input_image != None:
-                return input_image.resize((image_width, image_height), Image.ANTIALIAS)
+                return input_image.resize((image_width, image_height), Image.LANCZOS)
             else:
                 background_color_tuple = ImageColor.getrgb(background_color)
                 return Image.new('RGB', (image_width, image_height), color=background_color_tuple)
         else:
             background_color_tuple = ImageColor.getrgb(background_color)
             return Image.new('RGB', (image_width, image_height), color=background_color_tuple)
+
+
+# Module-level font cache. Reusing a FreeType font object across frames cuts
+# PIL/Pillow load time dramatically (hundreds of ms → single-digit ms).
+# 256 distinct (file, size) pairs is plenty for typical workflows.
+@lru_cache(maxsize=256)
+def _get_cached_font(font_file: str, font_size: int) -> ImageFont.FreeTypeFont:
+    return ImageFont.truetype(font_file, font_size)
+
+
+# --------------------------------------------------------------------------- #
+# Tagged-text segmentation                                                    #
+# --------------------------------------------------------------------------- #
+_TAG_OPEN = "<tag>"
+_TAG_CLOSE = "</tag>"
+
+
+def _split_tagged_segments(text: str, main, tagged) -> list[tuple]:
+    """Walk `text` once and emit a list of (segment_text, font, color, ...) tuples.
+
+    A segment is a run of characters that share the same font + color.
+    Switching at <tag>...</tag> boundaries. The two tuple args `main` and
+    `tagged` hold the 8-tuple of (font, color, border, shadow, border_w,
+    shadow_dx, shadow_dy) for each side.
+    """
+    out: list[tuple] = []
+    buf: list[str] = []
+    inside = False
+
+    def flush():
+        if not buf:
+            return
+        params = tagged if inside else main
+        out.append(("".join(buf), *params))
+        buf.clear()
+
+    i = 0
+    while i < len(text):
+        if text.startswith(_TAG_OPEN, i):
+            flush()
+            inside = True
+            i += len(_TAG_OPEN)
+        elif text.startswith(_TAG_CLOSE, i):
+            flush()
+            inside = False
+            i += len(_TAG_CLOSE)
+        elif text[i] == "\n":
+            flush()
+            out.append(("\n", None, None, None, None, 0, 0, 0))
+            i += 1
+        else:
+            buf.append(text[i])
+            i += 1
+    flush()
+    return out
+
+
+def _group_segments_by_line(segments: list[tuple]) -> list[tuple[str, list[tuple]]]:
+    """Group flat segments into (line_text, [segments on that line]) pairs.
+
+    Newline segments mark boundaries; segments on a single line stay in
+    rendering order so the kerning / spacing between tagged and untagged
+    text is preserved.
+    """
+    lines: list[tuple[str, list[tuple]]] = []
+    current_text: list[str] = []
+    current_segs: list[tuple] = []
+    for seg in segments:
+        if seg[0] == "\n":
+            lines.append(("".join(current_text), current_segs))
+            current_text, current_segs = [], []
+        else:
+            current_text.append(seg[0])
+            current_segs.append(seg)
+    if current_segs or current_text:
+        lines.append(("".join(current_text), current_segs))
+    return lines

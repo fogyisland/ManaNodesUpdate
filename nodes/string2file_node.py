@@ -28,13 +28,15 @@ class string2file:
     FUNCTION = "run"
     OUTPUT_NODE = True
 
-    def run(self, string,unique_id = None, extra_pnginfo=None, **kwargs):
-
+    def run(self, string, unique_id=None, extra_pnginfo=None, **kwargs):
         full_path = self.construct_text_path(kwargs)
 
         # Write the string to the file
-        with open(full_path, 'w') as file:
-            file.write(string[0])
+        try:
+            with open(full_path, 'w', encoding='utf-8') as file:
+                file.write(string[0])
+        except OSError as e:
+            raise OSError(f"Failed to write {full_path}: {e}") from e
 
         if unique_id and extra_pnginfo and "workflow" in extra_pnginfo[0]:
             workflow = extra_pnginfo[0]["workflow"]

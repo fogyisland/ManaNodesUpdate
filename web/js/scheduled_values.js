@@ -1,25 +1,58 @@
 import { app } from "../../../scripts/app.js";
+
+// Lazy-load Chart.js + zoom plugin + Bootstrap icons. The originals hit
+// remote CDNs synchronously, which (a) breaks offline / firewalled installs
+// and (b) loads incompatible plugin versions. We pin to versions known to
+// work together and dedupe so the user pays the cost once per session.
+let _chartJsPromise = null;
 function loadChartJs(callback) {
-    const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/chart.js';
-    script.onload = () => {
-        const pluginScript = document.createElement('script');
-        pluginScript.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@1.0.1/dist/chartjs-plugin-zoom.min.js';
-        pluginScript.onload = callback;
-        document.head.appendChild(pluginScript);
-    };
-    document.head.appendChild(script);
+    if (window.Chart && window.Chart.registry) {
+        callback();
+        return;
+    }
+    if (_chartJsPromise) {
+        _chartJsPromise.then(callback);
+        return;
+    }
+    _chartJsPromise = new Promise((resolve) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
+        script.onload = () => {
+            // chartjs-plugin-zoom 2.x is the only line that works with Chart.js 4.x
+            const pluginScript = document.createElement('script');
+            pluginScript.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js';
+            pluginScript.onload = resolve;
+            pluginScript.onerror = resolve; // plugin is nice-to-have; chart still works without it
+            document.head.appendChild(pluginScript);
+        };
+        script.onerror = () => {
+            console.error('[Mana] Failed to load Chart.js from CDN. The Scheduled Values chart will be unavailable. Check your network or load Chart.js manually.');
+            resolve();
+        };
+        document.head.appendChild(script);
+    });
+    _chartJsPromise.then(callback);
 }
+
+let _bootstrapLoaded = false;
 function loadBootstrapCss() {
+    if (_bootstrapLoaded) return;
+    _bootstrapLoaded = true;
+    // Bootstrap is used only for utility classes (btn, m-1, d-flex, …).
+    // The bundle is large and most users already have ComfyUI's own
+    // styling — load it only once and skip silently if it fails.
     const link = document.createElement('link');
-    link.href = 'https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css';
+    link.href = 'https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css';
     link.rel = 'stylesheet';
+    link.crossOrigin = 'anonymous';
+    link.onerror = () => console.warn('[Mana] Failed to load Bootstrap CSS; the chart UI may look unstyled.');
     document.head.appendChild(link);
     const link2 = document.createElement('link');
-    link2.href = 'https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.4.0/font/bootstrap-icons.min.css';
+    link2.href = 'https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css';
     link2.rel = 'stylesheet';
+    link2.crossOrigin = 'anonymous';
+    link2.onerror = () => console.warn('[Mana] Failed to load Bootstrap Icons.');
     document.head.appendChild(link2);
-    
 }
 function chainCallback(object, property, callback) {
     if (object == undefined) {
@@ -637,15 +670,34 @@ app.registerExtension({
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (nodeData.name === "Scheduled Values") {
 
-            chainCallback(nodeType.prototype, "onConfigure", function () {
-                const id_widget = this.widgets.find(w => w.name === "id");
-                if (id_widget.value == 0) {
-                    
-                    let max = 1000000; 
-                    id_widget.value = Math.floor(Math.random() * max);
+            // BUGFIX: The old code generated a fresh random ID in
+            // onNodeCreated every time the workflow was loaded. That
+            // made savedKeyframes_<id> lookups fail silently, which is
+            // why "my keyframes disappear when I reopen the workflow".
+            // We now derive the ID from ComfyUI's own node id (stable
+            // per workflow position) so a saved workflow keeps its data.
+            const _getStableId = function (node) {
+                const id_widget = node.widgets.find(w => w.name === "id");
+                if (!id_widget) return null;
+                if (id_widget.value && id_widget.value !== 0) {
+                    return id_widget.value;
                 }
+                // Fall back to the ComfyUI node id (string -> int) so
+                // two nodes on the same canvas get distinct ids.
+                let seed = 0;
+                const s = String(node.id || "");
+                for (let i = 0; i < s.length; i++) {
+                    seed = (seed * 31 + s.charCodeAt(i)) | 0;
+                }
+                const generated = Math.abs(seed) || Math.floor(Math.random() * 1000000);
+                id_widget.value = generated;
+                return generated;
+            };
 
-                this.timelineWidget.id = id_widget.value;
+            chainCallback(nodeType.prototype, "onConfigure", function () {
+                if (!this.timelineWidget) return;
+                const stableId = _getStableId(this);
+                this.timelineWidget.id = stableId;
                 const x = this.widgets.find(w => w.name === "frame_count").value;
                 const y = this.widgets.find(w => w.name === "value_range").value;
                 this.timelineWidget.maxX = x;
@@ -655,9 +707,14 @@ app.registerExtension({
                 const step_size = this.widgets.find(w => w.name === "step_mode").value;
                 this.timelineWidget.updateStepSize(step_size);
 
-                const savedKeyframes = JSON.parse(localStorage.getItem('savedKeyframes_' + id_widget.value));
-                const savedGeneratedKeyframes = JSON.parse(localStorage.getItem('savedGeneratedKeyframes_' + id_widget.value));
-                
+                let savedKeyframes = null, savedGeneratedKeyframes = null;
+                try {
+                    savedKeyframes = JSON.parse(localStorage.getItem('savedKeyframes_' + stableId));
+                    savedGeneratedKeyframes = JSON.parse(localStorage.getItem('savedGeneratedKeyframes_' + stableId));
+                } catch (e) {
+                    console.warn('[Mana] Failed to parse saved scheduled values:', e);
+                }
+
                 if (savedKeyframes) {
                     this.timelineWidget.keyframes = savedKeyframes;
                 }
@@ -675,14 +732,20 @@ app.registerExtension({
                 let valueRange = value_range_widget ? parseInt(value_range_widget.value, 10) : 100;
 
                 const timelineWidget = new TimelineWidget(this);
+                // Defer chart init until Chart.js is loaded, but also
+                // tolerate a failed load (e.g. offline) — the node should
+                // still be usable for non-chart operations.
                 loadChartJs(() => {
-                    timelineWidget.initChart(maxX, valueRange);
+                    if (window.Chart) {
+                        timelineWidget.initChart(maxX, valueRange);
+                    } else {
+                        console.warn('[Mana] Chart.js unavailable; Scheduled Values chart disabled.');
+                    }
                 });
                 loadBootstrapCss();
                 this.timelineWidget = timelineWidget;
-                let max = 1000000; 
-                this.timelineWidget.id = Math.floor(Math.random() * max);
-                this.widgets.find(w => w.name === "id").value = this.timelineWidget.id;
+                // Derive stable id from ComfyUI node id (not random per load).
+                this.timelineWidget.id = _getStableId(this);
 
             });
 

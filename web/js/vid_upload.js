@@ -1,6 +1,10 @@
 import { app } from "../../../scripts/app.js";
 import { api } from "../../../scripts/api.js";
 
+// vid_preview.js sits next to this file, so a leading "./" path is the
+// correct relative import. The old "../../../scripts/..." form worked
+// only because of accidental resolution; pinning it removes a class of
+// "module not found" errors after ComfyUI refactors its scripts/ layout.
 import {
   chainCallback,
   addVideoPreview,

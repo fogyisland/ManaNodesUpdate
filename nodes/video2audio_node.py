@@ -1,98 +1,54 @@
-import os
-import cv2
-import torch
+"""Split Video node.
+
+Reads a video file from the input/video directory, extracts a frame range
+as ComfyUI IMAGE tensors, and (optionally) writes the matching audio
+slice to the output directory.
+"""
+from __future__ import annotations
+
 import hashlib
-import folder_paths
-from ..helpers.utils import ensure_opencv, pil2tensor
-from PIL import Image
+import os
+from functools import lru_cache
 from pathlib import Path
-from moviepy.editor import VideoFileClip
+
+import cv2
+import folder_paths
+import torch
+from moviepy import VideoFileClip  # moviepy 2.x top-level API
+from PIL import Image
+
+from ..helpers.utils import ensure_opencv, pil2tensor
+
 
 class video2audio:
+    """Read a video range, return frames + audio path."""
 
-    def __init__(self):
+    # Class-level cache so INPUT_TYPES doesn't re-scan the directory
+    # every time a node is dropped on the canvas.
+    _input_video_cache: list[str] | None = None
+
+    def __init__(self) -> None:
         pass
+
+    # ------------------------------------------------------------------ #
+    # ComfyUI metadata                                                    #
+    # ------------------------------------------------------------------ #
+    CATEGORY = "💠 Mana Nodes"
+    RETURN_TYPES = ("IMAGE", "STRING", "INT", "INT", "INT", "INT")
+    RETURN_NAMES = ("images", "audio_file", "fps", "frame_count", "height", "width")
+    FUNCTION = "run"
 
     @classmethod
     def INPUT_TYPES(cls):
-        input_dir = os.path.join(folder_paths.get_input_directory(), "video")
-        os.makedirs(input_dir, exist_ok=True)
-        files = [f"video/{f}" for f in os.listdir(input_dir) if os.path.isfile(os.path.join(input_dir, f))]
         return {
             "required": {
-                "video": (sorted(files), {"mana_video_upload": True}),
+                "video": (cls._list_input_videos(), {"mana_video_upload": True}),
                 "frame_limit": ("INT", {"default": 16, "min": 1, "max": 10240, "step": 1}),
                 "frame_start": ("INT", {"default": 0, "min": 0, "max": 0xFFFFFFFF, "step": 1}),
-                "filename_prefix": ("STRING", {"default": "audio\\audio"})
+                "filename_prefix": ("STRING", {"default": "audio\\audio"}),
             },
-            "optional": {}
+            "optional": {},
         }
-
-    CATEGORY = "💠 Mana Nodes"
-    RETURN_TYPES = ("IMAGE", "STRING","INT", "INT", "INT","INT",) 
-    RETURN_NAMES = ("images", "audio_file","fps","frame_count", "height", "width",)
-    FUNCTION = "run"
-
-    def run(self, **kwargs):
-        video_path = folder_paths.get_annotated_filepath(kwargs['video'])
-        frames, width, height = self.extract_frames(video_path, kwargs)        
-        video_path = Path(video_path)
-        audio, fps = self.extract_audio_with_moviepy(video_path, kwargs)
-        if not frames:
-            raise ValueError("No frames could be extracted from the video.")
-        if not audio:
-            audio = "No audio track in the video."
-        return (torch.cat(frames, dim=0), audio, fps, len(frames), height, width,)
-    
-    def extract_audio_with_moviepy(self, video_path, kwargs):
-        # Convert WindowsPath object to string
-        video_file_path_str = str(video_path)
-
-        # Load the video file
-        video = VideoFileClip(video_file_path_str)
-
-        # Check if the video has an audio track
-        if video.audio is None:
-            return None, video.fps
-
-        # Calculate start and end time in seconds
-        fps = video.fps  # frames per second
-        start_time = kwargs['frame_start'] / fps
-        end_time = (kwargs['frame_start'] + kwargs['frame_limit']) / fps
-
-        full_path = os.path.join(folder_paths.get_output_directory(), os.path.normpath(kwargs['filename_prefix']))
-        if not full_path.endswith('.wav'):
-            full_path += '.wav'
-        Path(os.path.dirname(full_path)).mkdir(parents=True, exist_ok=True)
-        full_path_to_audio = os.path.abspath(full_path)
-
-        # Extract the specific audio segment
-        audio = video.subclip(start_time, end_time).audio
-        audio.write_audiofile(full_path)
-        fps = video.fps
-
-        return full_path_to_audio, fps
-
-    def extract_frames(self, video_path, kwargs):
-        ensure_opencv()
-        video = cv2.VideoCapture(video_path)
-        
-        width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-        video.set(cv2.CAP_PROP_POS_FRAMES, kwargs['frame_start'])
-
-        frames = []
-        for i in range(kwargs['frame_limit']):
-            ret, frame = video.read()
-            if ret:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                frames.append(pil2tensor(Image.fromarray(frame)))
-            else:
-                break
-
-        video.release()
-        return frames, width, height
 
     @classmethod
     def IS_CHANGED(cls, video, *args, **kwargs):
@@ -105,5 +61,92 @@ class video2audio:
     @classmethod
     def VALIDATE_INPUTS(cls, video, *args, **kwargs):
         if not folder_paths.exists_annotated_filepath(video):
-            return "Invalid video file: {}".format(video)
+            return f"Invalid video file: {video}"
         return True
+
+    # ------------------------------------------------------------------ #
+    # Main pipeline                                                       #
+    # ------------------------------------------------------------------ #
+    def run(self, video: str, frame_limit: int, frame_start: int,
+            filename_prefix: str, **_):
+        video_path = folder_paths.get_annotated_filepath(video)
+        frames, width, height = self._extract_frames(video_path, frame_limit, frame_start)
+        if not frames:
+            raise ValueError("No frames could be extracted from the video.")
+
+        audio_path, fps = self._extract_audio(
+            Path(video_path), frame_limit, frame_start, filename_prefix
+        )
+        if audio_path is None:
+            audio_path = "No audio track in the video."
+
+        return (torch.cat(frames, dim=0), audio_path, fps, len(frames), height, width)
+
+    # ------------------------------------------------------------------ #
+    # Internals                                                           #
+    # ------------------------------------------------------------------ #
+    @classmethod
+    def _list_input_videos(cls) -> list[str]:
+        if cls._input_video_cache is not None:
+            return cls._input_video_cache
+        input_dir = os.path.join(folder_paths.get_input_directory(), "video")
+        os.makedirs(input_dir, exist_ok=True)
+        cls._input_video_cache = sorted(
+            f"video/{f}"
+            for f in os.listdir(input_dir)
+            if os.path.isfile(os.path.join(input_dir, f))
+        )
+        return cls._input_video_cache
+
+    @staticmethod
+    def _extract_frames(video_path: str, frame_limit: int, frame_start: int):
+        ensure_opencv()
+        cap = cv2.VideoCapture(video_path)
+        try:
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_start)
+
+            frames = []
+            for _ in range(frame_limit):
+                ok, frame = cap.read()
+                if not ok:
+                    break
+                frames.append(pil2tensor(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))))
+            return frames, width, height
+        finally:
+            cap.release()
+
+    @staticmethod
+    def _extract_audio(video_path: Path, frame_limit: int, frame_start: int,
+                       filename_prefix: str):
+        with VideoFileClip(str(video_path)) as video:
+            fps = video.fps
+            if video.audio is None:
+                return None, fps
+
+            start = frame_start / fps
+            end = (frame_start + frame_limit) / fps
+            audio = video.subclipped(start, end).audio
+
+            out_path = _unique_output_path(
+                folder_paths.get_output_directory(), filename_prefix, ".wav"
+            )
+            audio.write_audio(out_path)
+            return str(Path(out_path).resolve()), fps
+
+
+# --------------------------------------------------------------------------- #
+# Helpers                                                                     #
+# --------------------------------------------------------------------------- #
+def _unique_output_path(base_dir: str, prefix: str, ext: str) -> str:
+    """Build a unique output path: <base>/<prefix><ext>, or with _N suffix on collision."""
+    full = os.path.join(base_dir, os.path.normpath(prefix))
+    if not full.endswith(ext):
+        full += ext
+    counter = 1
+    while os.path.exists(full):
+        full = os.path.join(base_dir, f"{prefix}_{counter}{ext}")
+        counter += 1
+    Path(os.path.dirname(full)).mkdir(parents=True, exist_ok=True)
+    return full

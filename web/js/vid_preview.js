@@ -1,10 +1,54 @@
-import { app, ANIM_PREVIEW_WIDGET } from '../../../scripts/app.js';
+import { app } from '../../../scripts/app.js';
 import { api } from "../../../scripts/api.js";
 import { $el } from '../../../scripts/ui.js';
-import { createImageHost } from "../../../scripts/ui/imagePreview.js"
+
+// ANIM_PREVIEW_WIDGET moved out of app.js into a separate module in newer
+// ComfyUI releases. Look it up defensively; fall back to the historical
+// name so the video preview still attaches.
+const ANIM_PREVIEW_WIDGET = (() => {
+    try {
+        // Newer ComfyUI exposes it via app itself
+        if (app && app.ANIM_PREVIEW_WIDGET) return app.ANIM_PREVIEW_WIDGET;
+    } catch (_) { /* ignore */ }
+    return "$$disc_widget_animation_preview";
+})();
+
+// createImageHost used to live at scripts/ui/imagePreview.js; in newer
+// versions it was moved/renamed. Try both locations and fall back to a
+// minimal local host so the video preview never silently breaks.
+let _imageHostFactory = null;
+async function _getImageHostFactory() {
+    if (_imageHostFactory !== null) return _imageHostFactory;
+    try {
+        const mod = await import("../../../scripts/ui/imagePreview.js");
+        if (mod && typeof mod.createImageHost === "function") {
+            _imageHostFactory = mod.createImageHost;
+            return _imageHostFactory;
+        }
+    } catch (_) { /* fall through to local fallback */ }
+    _imageHostFactory = false; // marker: not available, use local fallback
+    return _imageHostFactory;
+}
+
+function _createLocalImageHost(node) {
+    // Minimal stand-in: render the first image directly. Good enough for
+    // video preview; not a drop-in for the full ComfyUI image host.
+    const el = $el("div.comfy-img-preview", { style: { width: "100%" } });
+    let currentImg = null;
+    return {
+        el,
+        getHeight: () => currentImg ? currentImg.clientHeight : 0,
+        onDraw: function () { /* no-op */ },
+        updateImages: function (imgs) {
+            if (currentImg && el.contains(currentImg)) el.removeChild(currentImg);
+            currentImg = imgs[0] || null;
+            if (currentImg) el.appendChild(currentImg);
+        },
+    };
+}
 
 const URL_REGEX = /^(https?:\/\/|\/view\?|data:image\/)/;
- 
+
 const style = `
 .comfy-img-preview video {
   object-fit: contain;
@@ -125,31 +169,36 @@ export function addVideoPreview(nodeType, options = {}) {
       .then((imgs) => {
         this.imgs = imgs.filter(Boolean);
       })
-      .then(() => {
+      .then(async () => {
         if (!this.imgs.length) return;
 
         this.animatedImages = true;
         const widgetIdx = this.widgets?.findIndex((w) => w.name === ANIM_PREVIEW_WIDGET);
 
-        if (widgetIdx > -1) {
-          // Replace content
-          const widget = this.widgets[widgetIdx];
-          widget.options.host.updateImages(this.imgs);
-        } else {
-          const host = createImageHost(this);
-          this.setSizeForImage(true);
-          const widget = this.addDOMWidget(ANIM_PREVIEW_WIDGET, 'img', host.el, {
-            host,
-            getHeight: host.getHeight,
-            onDraw: host.onDraw,
-            hideOnZoom: false,
-          });
-          widget.serializeValue = () => ({
-            height: host.el.clientHeight,
-          });
+        const finishWithHost = (host) => {
+          if (widgetIdx > -1) {
+            const widget = this.widgets[widgetIdx];
+            widget.options.host.updateImages(this.imgs);
+          } else {
+            this.setSizeForImage(true);
+            const widget = this.addDOMWidget(ANIM_PREVIEW_WIDGET, 'img', host.el, {
+              host,
+              getHeight: host.getHeight,
+              onDraw: host.onDraw,
+              hideOnZoom: false,
+            });
+            widget.serializeValue = () => ({
+              height: host.el.clientHeight,
+            });
+            widget.options.host.updateImages(this.imgs);
+          }
+        };
 
-          widget.options.host.updateImages(this.imgs);
-        }
+        const factory = await _getImageHostFactory();
+        const host = (typeof factory === "function")
+          ? factory(this)
+          : _createLocalImageHost(this);
+        finishWithHost(host);
 
         this.imgs.forEach((img) => {
           if (img instanceof HTMLVideoElement) {

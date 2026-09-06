@@ -1,12 +1,36 @@
-numpy
-torch
-torchvision
-Pillow
-moviepy
-librosa
-transformers
-opencv-python-headless
-requests
-matplotlib
-scipy
-pyspellchecker
+# Mana Nodes - Python dependencies
+# ---------------------------------------------------------------------------
+# Tested with Python 3.10 / 3.11. Python 3.12+ works for most nodes; some
+# transformers models still pin torch<2.2, so stay on 3.10/3.11 if you
+# hit a resolver conflict on a fresh install.
+# ---------------------------------------------------------------------------
+
+# Core numeric + ML stack
+numpy>=1.24,<3.0
+torch>=2.0,<3.0
+torchvision>=0.15,<1.0
+
+# Image processing - Pillow 10+ removed the legacy Image.ANTIALIAS
+# constant that we relied on. Pin to >=10 to force the LANCZOS path.
+Pillow>=10.0.0,<12.0
+
+# Audio / video.
+# moviepy 1.x and 2.x both work; we detect the version at runtime in
+# helpers/moviepy_compat.py and call the right API for each.
+# NB: moviepy 2.x removed the `moviepy.editor` submodule — the imports
+# in this repo are written defensively to support both.
+moviepy>=1.0.3,<3.0
+
+# Speech-to-text pipeline (wav2vec2)
+librosa>=0.10,<1.0
+transformers>=4.30,<5.0
+
+# Image / video IO. Headless is preferred for ComfyUI servers (no GUI deps);
+# the helper falls back to opencv-python if the headless install fails.
+opencv-python-headless>=4.8,<5.0
+
+# Utilities
+requests>=2.31
+matplotlib>=3.7
+scipy>=1.10
+pyspellchecker>=0.7

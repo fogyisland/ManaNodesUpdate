@@ -1,8 +1,16 @@
+import functools
 from transformers import pipeline
 import scipy.io.wavfile
 from pathlib import Path
 import os
 import folder_paths
+
+
+@functools.lru_cache(maxsize=2)
+def _get_bark_pipeline():
+    """Cache the (huge) Bark pipeline so we don't re-download on every call."""
+    return pipeline("text-to-speech", "suno/bark")
+
 
 class text2speech:
 
@@ -24,18 +32,22 @@ class text2speech:
     OUTPUT_NODE = True
 
     def run(self, text, **kwargs):
+        # filename_prefix comes through **kwargs because it's not in the
+        # explicit signature; support both list and scalar (INPUT_IS_LIST).
+        prefix = kwargs.get('filename_prefix', 'audio\\audio')
+        if isinstance(prefix, list):
+            prefix = prefix[0]
 
-        full_path = os.path.join(folder_paths.get_output_directory(), os.path.normpath(kwargs['filename_prefix']))
+        full_path = os.path.join(folder_paths.get_output_directory(), os.path.normpath(prefix))
         if not full_path.endswith('.wav'):
-            full_path += '.wav'  
+            full_path += '.wav'
         Path(os.path.dirname(full_path)).mkdir(parents=True, exist_ok=True)
 
-        synthesizer = pipeline("text-to-speech", "suno/bark")
+        synthesizer = _get_bark_pipeline()
         speech = synthesizer(text, forward_params={"do_sample": True})
 
         audio_waveform = speech['audio']
         if audio_waveform.ndim == 2:
-            # Transpose if it's in the wrong shape (num_channels, num_samples)
             audio_waveform = audio_waveform.T
 
         scipy.io.wavfile.write(full_path, rate=speech['sampling_rate'], data=audio_waveform)

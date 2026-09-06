@@ -1,5 +1,6 @@
 import copy
 import logging
+import sys
 
 class ColoredFormatter(logging.Formatter):
     COLORS = {
@@ -18,22 +19,17 @@ class ColoredFormatter(logging.Formatter):
         colored_record.levelname = f"{seq}{levelname}{self.COLORS['RESET']}"
         return super().format(colored_record)
 
+
 def logger():
-    def error(*args, **kwargs):
-        pass
-
-    return type("Logger", (), {"error": error})()
-    
-# Create a new logger
-#logger = logging.getLogger("Mana")
-#logger.propagate = False
-
-# Add handler if we don't have one.
-#if not logger.handlers:
-#    handler = logging.StreamHandler(sys.stdout)
-#    handler.setFormatter(ColoredFormatter("[%(name)s] - %(levelname)s - %(message)s"))
-#    logger.addHandler(handler)
-
-# Configure logger
-#loglevel = logging.INFO
-#logger.setLevel(loglevel)
+    """Return a real logger that emits to stdout. The old stub silently
+    swallowed every error, which made debugging 'why is my node broken?'
+    impossible. Use the standard logging module so the same messages end
+    up in ComfyUI's console alongside the rest of its output."""
+    log = logging.getLogger("Mana")
+    if not log.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(ColoredFormatter("[%(name)s] - %(levelname)s - %(message)s"))
+        log.addHandler(handler)
+        log.setLevel(logging.INFO)
+        log.propagate = False
+    return log

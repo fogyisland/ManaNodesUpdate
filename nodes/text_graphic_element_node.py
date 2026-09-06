@@ -64,6 +64,12 @@ class text_graphic_element:
                 "rotation_anchor_x": ("INT", {"default": 0, "step": 1}),
                 "rotation_anchor_y": ("INT", {"default": 0, "step": 1}),
             },
+            "optional": {
+                # Lets users feed outputs of Scheduled Values / Preset Color Animations
+                # into any of the animatable properties (font_size, x_offset, etc.).
+                # Format: JSON-list string optionally followed by "$<animation_reset>".
+                "scheduled_values": ("STRING", {"default": "{}", "display": "text", "forceInput": True}),
+            },
         }
 
     CATEGORY = "💠 Mana Nodes/⚙️ Generator Settings"
