@@ -60,6 +60,23 @@ const LANGUAGE_TO_SPELL_CHECK = {
     "Multilingual 100+": "English",
 };
 
+// chainCallback chains our callback after any existing callback for
+// the same hook. Without this, registering a second onNodeCreated
+// for the same node type would clobber the first.
+function chainCallback(object, property, callback) {
+    if (object == undefined) return;
+    if (property in object) {
+        const original = object[property];
+        object[property] = function () {
+            const r = original.apply(this, arguments);
+            callback.apply(this, arguments);
+            return r;
+        };
+    } else {
+        object[property] = callback;
+    }
+}
+
 app.registerExtension({
     name: "ManaNodes.speech2text",
 
@@ -176,14 +193,41 @@ function addAudioFilePicker(node) {
         console.warn("[Mana] audio_file widget not found on node", node.comfyClass);
         return;
     }
-    if (widget.element && widget.element.dataset?.manaPickerAttached === "1") return;
+    if (node._manaAudioPickerAttached) return;
+    node._manaAudioPickerAttached = true;
 
-    // Build a small button styled to match ComfyUI's widget look.
+    // Build the file picker as a hidden <input type="file">.
+    // Clicking the visible button below triggers .click() on it.
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = "audio/*,.wav,.mp3,.flac,.ogg,.m4a,.aac,.opus,.wma";
+    fileInput.style.display = "none";
+    fileInput.addEventListener("change", () => {
+        const f = fileInput.files && fileInput.files[0];
+        if (!f) return;
+        const path = (f.path || f.name).replace(/\\/g, "/");
+        widget.value = path;
+        if (node.onResize) node.onResize(node.size);
+        app.graph?.setDirtyCanvas(true, false);
+    });
+
+    // Build the visible button. It lives inside a wrapper <div>
+    // we add as a DOM widget on the node via ComfyUI's official
+    // addDOMWidget API. This is the most version-portable way to
+    // attach custom UI to a node: ComfyUI itself manages placement,
+    // sizing, and lifecycle.
+    const wrapper = document.createElement("div");
+    wrapper.style.cssText = [
+        "padding: 4px 0",
+        "display: flex",
+        "align-items: center",
+        "gap: 6px",
+    ].join(";");
+
     const btn = document.createElement("button");
-    btn.textContent = "📁 Browse audio file";
+    btn.textContent = "Browse audio file";
     btn.title = "Open a native file picker to select an audio file";
     btn.style.cssText = [
-        "margin-top: 4px",
         "padding: 6px 12px",
         "background: #2a3a4f",
         "color: #d4e4ff",
@@ -191,51 +235,45 @@ function addAudioFilePicker(node) {
         "border-radius: 4px",
         "font-size: 12px",
         "cursor: pointer",
-        "width: 100%",
+        "flex: 1",
     ].join(";");
     btn.onmouseenter = () => { btn.style.background = "#3a4a5f"; };
     btn.onmouseleave = () => { btn.style.background = "#2a3a4f"; };
-
-    // Hidden <input type="file"> we click when the user presses Browse.
-    const fileInput = document.createElement("input");
-    fileInput.type = "file";
-    fileInput.accept = "audio/*,.wav,.mp3,.flac,.ogg,.m4a,.aac,.opus,.wma";
-    fileInput.style.display = "none";
-
-    fileInput.addEventListener("change", () => {
-        const f = fileInput.files && fileInput.files[0];
-        if (!f) return;
-        // Cross-platform path: File.path on Chromium-based browsers,
-        // fall back to name for older browsers.
-        const path = (f.path || f.name).replace(/\\/g, "/");
-        widget.value = path;
-        // Force a redraw so the new value is visible.
-        if (node.onResize) node.onResize(node.size);
-        app.graph?.setDirtyCanvas(true, false);
-    });
-
     btn.addEventListener("click", () => fileInput.click());
 
-    // Decide where to put the button. ComfyUI's widget DOM varies by
-    // version: newer versions wrap the input in `widget.element`,
-    // older ones have only `widget.inputEl`. Try the wrapper first,
-    // then the input's parent, then the widget's row container.
-    let host = widget.element || widget.inputEl?.parentElement;
-    if (host) {
-        // Append the button to the same container as the input.
-        host.appendChild(btn);
-        host.appendChild(fileInput);
-    } else {
-        // Last resort: insert directly after the input on the node.
-        if (widget.inputEl && widget.inputEl.parentNode) {
-            widget.inputEl.parentNode.insertBefore(btn, widget.inputEl.nextSibling);
-            widget.inputEl.parentNode.insertBefore(fileInput, btn.nextSibling);
+    const hint = document.createElement("span");
+    hint.textContent = "or type a path";
+    hint.style.cssText = "color: #888; font-size: 11px; flex: 0 0 auto;";
+
+    wrapper.appendChild(btn);
+    wrapper.appendChild(hint);
+
+    // Use addDOMWidget so ComfyUI itself places and sizes the wrapper.
+    // The widget is purely visual: getValue/setValue are no-ops.
+    try {
+        const domWidget = node.addDOMWidget(
+            "mana_audio_picker",  // name
+            "audio_file_picker",  // type
+            wrapper,
+            {
+                getValue: () => "",
+                setValue: (v) => {},
+                getMinHeight: () => 36,
+                getMaxHeight: () => 36,
+            }
+        );
+        // Save a reference so we can clean up if needed
+        widget._manaPickerWidget = domWidget;
+    } catch (e) {
+        // Fallback: append to node body directly
+        console.warn("[Mana] addDOMWidget failed, falling back to node.appendChild", e);
+        const nodeEl = node.el || node.dom || document.querySelector(`[data-id="${node.id}"]`);
+        if (nodeEl) {
+            nodeEl.appendChild(wrapper);
         } else {
-            console.warn("[Mana] could not find DOM host for audio_file picker on", node.comfyClass);
-            return;
+            console.error("[Mana] could not find node DOM to attach picker");
         }
     }
-    if (host?.dataset) host.dataset.manaPickerAttached = "1";
 }
 
 // Register the picker on every Speech Recognition node that's added.
