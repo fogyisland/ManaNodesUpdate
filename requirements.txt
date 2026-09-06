@@ -2,6 +2,9 @@
 # ---------------------------------------------------------------------------
 # Tested with Python 3.10 / 3.11 / 3.12.
 # Verified against the package versions listed below as of 2026-09.
+# Note: this file is pure ASCII on purpose. Some Windows locales
+# default to GBK and pip can't decode UTF-8 comments; non-ASCII
+# characters here break `pip install -r requirements.txt`.
 # ---------------------------------------------------------------------------
 
 # Core numeric + ML stack
@@ -14,13 +17,13 @@ torchvision>=0.15,<1.0
 # Current latest is 12.x.
 Pillow>=10.0.0
 
-# Audio / video. 1.x and 2.x both work — the import sites in
+# Audio / video. 1.x and 2.x both work - the import sites in
 # video2audio_node.py and audio2video_node.py try the new top-level
-# path first and fall back to `moviepy.editor`. 2.x removed the
-# `moviepy.editor` submodule and renamed `subclip` → `subclipped`
-# and `set_audio` → `with_audio`; 3.x does not exist yet (as of
-# 2026-09) so we don't pin an upper bound beyond the 3.0 guardrail.
-# Bump deliberately when a future major release lands.
+# path first and fall back to moviepy.editor. 2.x removed the
+# moviepy.editor submodule and renamed subclip -> subclipped and
+# set_audio -> with_audio; 3.x does not exist yet (as of 2026-09),
+# so we don't pin an upper bound beyond the 3.0 guardrail. Bump
+# deliberately when a future major release lands.
 moviepy>=1.0.3,<3.0
 
 # Speech-to-text (wav2vec2). transformers 5.x dropped a few legacy
@@ -30,8 +33,9 @@ transformers>=4.30
 # Audio decoding for wav2vec2.
 librosa>=0.10
 
-# Image / video IO. Headless is preferred for ComfyUI servers (no GUI deps);
-# the helper falls back to opencv-python if the headless install fails.
+# Image / video IO. Headless is preferred for ComfyUI servers
+# (no GUI deps); the helper falls back to opencv-python if the
+# headless install fails.
 opencv-python-headless>=4.8
 
 # Utilities
