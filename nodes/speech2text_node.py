@@ -37,25 +37,37 @@ DEFAULT_WAV2VEC2_MODELS: tuple[str, ...] = (
     "jonatasgrosman/wav2vec2-large-xlsr-53-arabic",
 )
 
-# Languages the SpellChecker (pyspellchecker) supports. Chinese is in the
-# wav2vec2 model list but NOT here because pyspellchecker only handles
-# space-separated Latin-alphabet languages; Chinese has no concept of
-# word-boundary spelling correction.
+# All languages the user can pick. pyspellchecker only supports the
+# top half (Latin-alphabet); the bottom half (CJK etc.) all map to
+# None in LANGUAGE_TO_ISO which short-circuits the spell-check step.
+# We list them by their actual name rather than "None" so the user
+# sees a familiar label when their audio is Chinese / Japanese / etc.
 SPELL_CHECK_LANGUAGES: tuple[str, ...] = (
+    # Latin-alphabet (actual spell check)
     "English", "Spanish", "French", "Portuguese", "German", "Italian",
     "Russian", "Arabic", "Basque", "Latvian", "Dutch",
-    # Pseudo-languages for the languages that the wav2vec2 model
-    # list covers but spell-check doesn't:
-    "None (skip spell check)",
+    # CJK + others (no spell check available; pyspellchecker can't
+    # word-boundary these languages)
+    "Chinese (中文)", "Japanese (日本語)", "Korean (한국어)",
+    "Hindi (हिन्दी)", "Thai (ไทย)", "Vietnamese (Tiếng Việt)",
+    "Arabic (already listed)",  # alias kept for backwards compat
+    "None (skip spell check)",  # catch-all
 )
 
-# ISO 639-1 codes for pyspellchecker. "None (skip spell check)" maps to
-# None which short-circuits the spell-check step in _spell_correct.
+# ISO 639-1 codes for pyspellchecker. CJK / non-spaced languages map
+# to None which short-circuits the spell-check step in _spell_correct.
 LANGUAGE_TO_ISO: dict[str, str | None] = {
     "English": "en", "Spanish": "es", "French": "fr",
     "Portuguese": "pt", "German": "de", "Italian": "it",
     "Russian": "ru", "Arabic": "ar", "Basque": "eu",
     "Latvian": "lv", "Dutch": "nl",
+    "Chinese (中文)": None,
+    "Japanese (日本語)": None,
+    "Korean (한국어)": None,
+    "Hindi (हिन्दी)": None,
+    "Thai (ไทย)": None,
+    "Vietnamese (Tiếng Việt)": None,
+    "Arabic (already listed)": "ar",
     "None (skip spell check)": None,
 }
 
@@ -100,7 +112,7 @@ class speech2text:
                 # rather than forcing the user to add a converter.
                 "audio_file": (("AUDIO", "STRING"), {"display": "text"}),
                 "wav2vec2_model": (DEFAULT_WAV2VEC2_MODELS, {"display": "dropdown", "default": DEFAULT_WAV2VEC2_MODELS[0]}),
-                "spell_check_language": (SPELL_CHECK_LANGUAGES, {"default": "English", "display": "dropdown"}),
+                "spell_check_language": (SPELL_CHECK_LANGUAGES, {"default": "English", "display": "dropdown"}),  # default set later based on wav2vec2 model selection
                 "framestamps_max_chars": ("INT", {"default": 25, "step": 1, "display": "number"}),
                 "fps": ("INT", {"default": 30, "min": 1, "max": 60, "step": 1}),
                 "transcription_mode": (TRANSCRIPTION_MODES, {"default": "fill", "display": "dropdown"}),
