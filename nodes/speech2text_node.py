@@ -10,27 +10,51 @@ from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
 # pause for seconds and broke offline. Users can still type any other
 # model id from HuggingFace into the dropdown.
 DEFAULT_WAV2VEC2_MODELS: tuple[str, ...] = (
+    # English
     "jonatasgrosman/wav2vec2-large-xlsr-53-english",
+    "facebook/wav2vec2-base-960h",
+    "facebook/wav2vec2-large-960h-lv60-self",
+    # Chinese — Mandarin (Simplified)
+    "jonatasgrosman/wav2vec2-large-xlsr-53-chinese-zh-cn",
+    "facebook/wav2vec2-large-xlsr-53-chinese-zh-cn",
+    # Multilingual (covers Chinese + 100+ other languages)
+    "facebook/mms-1b-all",
+    "facebook/mms-1b-fl102",
+    # European
     "jonatasgrosman/wav2vec2-large-xlsr-53-spanish",
     "jonatasgrosman/wav2vec2-large-xlsr-53-french",
     "jonatasgrosman/wav2vec2-large-xlsr-53-german",
     "jonatasgrosman/wav2vec2-large-xlsr-53-italian",
     "jonatasgrosman/wav2vec2-large-xlsr-53-portuguese",
     "jonatasgrosman/wav2vec2-large-xlsr-53-russian",
-    "facebook/wav2vec2-base-960h",
-    "facebook/wav2vec2-large-960h-lv60-self",
+    # Japanese
+    "jonatasgrosman/wav2vec2-large-xlsr-53-japanese",
+    # Korean
+    "jonatasgrosman/wav2vec2-large-xlsr-53-korean",
+    # Arabic
+    "jonatasgrosman/wav2vec2-large-xlsr-53-arabic",
 )
 
+# Languages the SpellChecker (pyspellchecker) supports. Chinese is in the
+# wav2vec2 model list but NOT here because pyspellchecker only handles
+# space-separated Latin-alphabet languages; Chinese has no concept of
+# word-boundary spelling correction.
 SPELL_CHECK_LANGUAGES: tuple[str, ...] = (
     "English", "Spanish", "French", "Portuguese", "German", "Italian",
     "Russian", "Arabic", "Basque", "Latvian", "Dutch",
+    # Pseudo-languages for the languages that the wav2vec2 model
+    # list covers but spell-check doesn't:
+    "None (skip spell check)",
 )
 
-LANGUAGE_TO_ISO: dict[str, str] = {
+# ISO 639-1 codes for pyspellchecker. "None (skip spell check)" maps to
+# None which short-circuits the spell-check step in _spell_correct.
+LANGUAGE_TO_ISO: dict[str, str | None] = {
     "English": "en", "Spanish": "es", "French": "fr",
     "Portuguese": "pt", "German": "de", "Italian": "it",
     "Russian": "ru", "Arabic": "ar", "Basque": "eu",
     "Latvian": "lv", "Dutch": "nl",
+    "None (skip spell check)": None,
 }
 
 TRANSCRIPTION_MODES: tuple[str, ...] = ("word", "line", "fill")
@@ -48,7 +72,7 @@ def _load_wav2vec2(model_id: str) -> tuple:
 class speech2text:
     """Speech recognition node (wav2vec2 + optional spell correction)."""
 
-    DESCRIPTION = "魔力节点 — 语音识别。wav2vec2 转录 + 拼写校正 + 字幕格式化。试试搜索：mana、魔力、语音、转录、字幕、识别。 Mana Nodes — speech recognition. wav2vec2 transcription with spell correction and caption-line formatting. Try searching: mana, speech, transcribe, whisper, wav2vec, stt, asr, caption."
+    DESCRIPTION = "魔力节点 — 语音识别。支持中文、英文、日文、韩文等多语种 wav2vec2 转录 + 字幕格式化。试试搜索：mana、魔力、语音、转录、字幕、识别、中文、中文识别。 Mana Nodes — speech recognition. Multilingual wav2vec2 transcription (Chinese, English, Japanese, Korean + 9 more languages) with caption-line formatting. Try searching: mana, speech, transcribe, whisper, wav2vec, stt, asr, caption, chinese, 中文."
 
     CATEGORY = "💠 Mana Nodes"
     RETURN_TYPES = ("TRANSCRIPTION", "STRING", "STRING", "STRING")
@@ -129,25 +153,69 @@ def _token_timestamps(predicted_ids: torch.Tensor, processor) -> list[tuple[str,
     return out
 
 
+def _is_cjk_char(c: str) -> bool:
+    """True if `c` is a Chinese / Japanese / Korean character."""
+    if not c:
+        return False
+    code = ord(c[0])
+    return (
+        0x4E00 <= code <= 0x9FFF        # CJK Unified Ideographs
+        or 0x3400 <= code <= 0x4DBF     # CJK Extension A
+        or 0x3040 <= code <= 0x30FF     # Hiragana + Katakana
+        or 0xAC00 <= code <= 0xD7AF     # Hangul Syllables
+    )
+
+
 def _group_tokens_into_words(timestamps: list[tuple[str, float]]) -> list[tuple[str, float, float]]:
     """Group sub-word tokens into words.
 
-    Accepts both SentencePiece word-prefix ("▁") and wav2vec2 word-boundary
-    ("|", " ") delimiters so the same code works across model families.
+    Three tokenizer families are supported:
+
+      - SentencePiece ("▁" prefix marks word start) — most XLSR models
+      - Wav2Vec2 ("|" or " " as word boundary) — base/large-960h
+      - CJK models (each character is its own word; no boundary marker)
+        — Chinese / Japanese / Korean XLSR models
+
+    For CJK, every character both closes the previous word and starts
+    a new one, so the model output of "你好世界" becomes four separate
+    one-character words.
     """
     words: list[tuple[str, float, float]] = []
     current: list[tuple[str, float]] = []
-    for token, time in timestamps:
-        if token == "<pad>":
-            continue
-        is_boundary = token in ("|", " ") or token.startswith("▁")
-        if is_boundary and current:
+
+    def _flush():
+        nonlocal current
+        if current:
             words.append((_join(current), current[0][1], current[-1][1]))
             current = []
-        if not is_boundary:
-            current.append((token, time))
-    if current:
-        words.append((_join(current), current[0][1], current[-1][1]))
+
+    for token, time in timestamps:
+        if token == "<pad>":
+            # Hard word boundary.
+            _flush()
+            continue
+
+        # Strip the SentencePiece word-start marker. The remainder is
+        # the actual content of the token (e.g. "▁Hello" -> "Hello").
+        starts_new_word = token.startswith("▁") or token in ("|", " ")
+        content = token[1:] if starts_new_word else token
+        if not content:
+            # Pure boundary marker with no content (e.g. just "▁").
+            _flush()
+            continue
+
+        if _is_cjk_char(content[0]):
+            # CJK: each character is its own word.
+            _flush()
+            words.append((content, time, time))
+            continue
+
+        if starts_new_word:
+            _flush()
+
+        current.append((content, time))
+
+    _flush()
     return words
 
 
@@ -156,9 +224,15 @@ def _join(tokens: list[tuple[str, float]]) -> str:
 
 
 def _spell_correct(words: list[tuple[str, float, float]], language: str):
+    # Chinese / Japanese / Korean have no concept of word-level spelling
+    # correction. The UI offers "None (skip spell check)" for these; we
+    # also accept any unknown language code and bail safely.
+    iso = LANGUAGE_TO_ISO.get(language, "en")
+    if iso is None:
+        return words
     try:
         from spellchecker import SpellChecker
-        spell = SpellChecker(language=LANGUAGE_TO_ISO.get(language, "en"))
+        spell = SpellChecker(language=iso)
     except ImportError:
         from ..helpers.logger import logger
         logger().info("SpellChecker not installed; skipping spell correction.")
