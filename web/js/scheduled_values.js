@@ -846,44 +846,65 @@ app.registerExtension({
                 _ensureIdWidgetWritten(this);
                 this.timelineWidget.id = this.widgets.find(w => w.name === "id").value;
 
-            });
-
-            chainCallback(nodeType.prototype, 'onDrawBackground', function () {
-                // BUGFIX (gray-overlay feedback loop): the old version
-                // of this callback wrote to `scheduled_values` widget
-                // value AND the `id` widget value on every redraw.
-                // ComfyUI treats widget.value mutations as dirty marks
-                // and triggers another redraw, so the loop ran ~30
-                // times/sec. While it ran, ComfyUI showed the node as
-                // 'still computing' with a gray overlay. Refreshing the
-                // page was the only way out.
+                // Hook explicit widget change listeners. The old
+                // onDrawBackground-driven updateTicks / updateStepSize
+                // was what caused the gray-overlay feedback loop —
+                // replacing it with onChange callbacks keeps the chart
+                // in sync with widget edits without ever firing from
+                // the redraw path.
                 //
-                // The fix: widget.value writes are now centralised in
-                // TimelineWidget.syncWidgetValue(), called only from
-                // user-action paths (addChartKeyframe /
-                // generateInBetweenValues / deleteGeneratedValues).
-                // This callback only updates chart visual state.
-                if (!this.timelineWidget) return;
-
-                const frame_count_widget = this.widgets.find(w => w.name === "frame_count");
-                const value_range_widget = this.widgets.find(w => w.name === "value_range");
-
-                let maxX = frame_count_widget ? parseInt(frame_count_widget.value, 10) : 20;
-                let valueRange = value_range_widget ? parseInt(value_range_widget.value, 10) : 100;
+                // We capture `this` (= the ComfyUI node) in the
+                // closure so we don't depend on what `widget.callback`
+                // binds `this` to in any given ComfyUI version. The
+                // original widget callback is still invoked first.
+                const node = this;
+                const hookWidgetChange = (widget, handler) => {
+                    if (!widget) return;
+                    const originalCallback = widget.callback;
+                    widget.callback = function (...args) {
+                        if (originalCallback) {
+                            originalCallback.apply(this, args);
+                        }
+                        handler(node);
+                    };
+                };
+                hookWidgetChange(frame_count_widget, function (n) {
+                    if (n && n.timelineWidget) {
+                        n.timelineWidget.updateTicks(
+                            parseInt(frame_count_widget.value, 10),
+                            parseInt(value_range_widget.value, 10),
+                        );
+                    }
+                });
+                hookWidgetChange(value_range_widget, function (n) {
+                    if (n && n.timelineWidget) {
+                        n.timelineWidget.updateTicks(
+                            parseInt(frame_count_widget.value, 10),
+                            parseInt(value_range_widget.value, 10),
+                        );
+                    }
+                });
                 const step_size_widget = this.widgets.find(w => w.name === "step_mode");
-                let stepSize = step_size_widget ? step_size_widget.value : "single";
-
-                if (this.prevMaxX !== maxX || this.prevValueRange !== valueRange) {
-                    this.timelineWidget.updateTicks(maxX, valueRange);
-                    this.prevMaxX = maxX;
-                    this.prevValueRange = valueRange;
-                }
-
-                if (this.stepSize !== stepSize) {
-                    this.timelineWidget.updateStepSize(stepSize);
-                    this.stepSize = stepSize;
-                }
+                hookWidgetChange(step_size_widget, function (n) {
+                    if (n && n.timelineWidget) {
+                        n.timelineWidget.updateStepSize(step_size_widget.value);
+                    }
+                });
             });
+
+            // No onDrawBackground override — having it at all was the
+            // root cause of the gray-overlay feedback loop. Even just
+            // the chart.update() inside updateTicks / updateStepSize
+            // can trigger another ComfyUI redraw, and if that redraw
+            // re-enters this callback we get an unbounded loop. The
+            // node stays marked dirty forever and ComfyUI shows the
+            // gray overlay. Refresh is the only way out.
+            //
+            // Instead, chart visual state is now driven from:
+            //   - user-action paths (addChartKeyframe /
+            //     generateInBetweenValues / removeChartKeyframe)
+            //   - onConfigure (runs once per workflow load)
+            //   - explicit widget change listeners wired up below
         }
     },
 });

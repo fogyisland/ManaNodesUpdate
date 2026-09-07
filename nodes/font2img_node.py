@@ -130,19 +130,6 @@ class font2img:
         transcription = kwargs.get('transcription', None)
         text = kwargs.get('text')
 
-        # TEMP DEBUG: surface exactly what shape text arrived in so we
-        # can tell whether the empty-warning is the upstream value
-        # being None / '' or a parse problem later.
-        from ..helpers.logger import logger as _dbg_logger
-        _dbg_logger().info(
-            "[DEBUG font2img.run] kwargs keys=%s text type=%s text repr=%r "
-            "transcription type=%s",
-            sorted(kwargs.keys()),
-            type(text).__name__,
-            text,
-            type(transcription).__name__,
-        )
-
         if transcription != None:
             formatted_transcription = self.format_transcription(kwargs)
             text = formatted_transcription
@@ -322,14 +309,14 @@ class font2img:
         border_color = kwargs['font']['border_color'][0]
         shadow_color = kwargs['font']['shadow_color'][0]
 
-        animation_reset_rotation = kwargs['font']['rotation'][1]
-        animation_reset_y_offset = kwargs['font']['y_offset'][1]
-        animation_reset_x_offset = kwargs['font']['x_offset'][1]
-        animation_reset_font_size = kwargs['font']['font_size'][1]
-        
-        animation_reset_font_color = kwargs['font']['font_color'][1]
-        animation_reset_border_color = kwargs['font']['border_color'][1]
-        animation_reset_shadow_color = kwargs['font']['shadow_color'][1]
+        animation_reset_rotation = _normalize_reset_mode(kwargs['font']['rotation'][1])
+        animation_reset_y_offset = _normalize_reset_mode(kwargs['font']['y_offset'][1])
+        animation_reset_x_offset = _normalize_reset_mode(kwargs['font']['x_offset'][1])
+        animation_reset_font_size = _normalize_reset_mode(kwargs['font']['font_size'][1])
+
+        animation_reset_font_color = _normalize_reset_mode(kwargs['font']['font_color'][1])
+        animation_reset_border_color = _normalize_reset_mode(kwargs['font']['border_color'][1])
+        animation_reset_shadow_color = _normalize_reset_mode(kwargs['font']['shadow_color'][1])
 
         rotation_duration = parse_animation_duration(rotation)
         y_offset_duration = parse_animation_duration(y_offset)
@@ -467,24 +454,6 @@ class font2img:
 
             image_index = min(i - 1, len(prepared_images) - 1)
             selected_image = prepared_images[image_index]
-
-            # TEMP DEBUG: log what we're about to render for the first
-            # frame so we can diagnose the 'output is black' complaint.
-            # Only frame 1 — later frames spam the log.
-            if i == 1:
-                from ..helpers.logger import logger as _dbg_logger
-                _dbg_logger().info(
-                    "[DEBUG font2img.frame1] text=%r font_color=%r "
-                    "border_color=%r shadow_color=%r background_color=%r "
-                    "selected_image size=%s mode=%s",
-                    text,
-                    current_font_color,
-                    current_border_color,
-                    current_shadow_color,
-                    kwargs.get('canvas', {}).get('background_color'),
-                    selected_image.size if hasattr(selected_image, 'size') else '?',
-                    selected_image.mode if hasattr(selected_image, 'mode') else '?',
-                )
 
             draw = ImageDraw.Draw(selected_image)
             text_block_width, text_block_height = self.calculate_text_block_size(draw, text, font, tagged_font, kwargs)
@@ -878,6 +847,43 @@ def _normalize_color(value, fallback="white"):
         # Re-wrap as a tuple so PIL's getink accepts it.
         return tuple(value)
     return fallback
+
+
+# Valid animation reset modes accepted by sequence_frame() in
+# helpers/animation.py. Anything outside this set is treated as a
+# raw colour / scalar (i.e. never matches the in-mode branches and
+# falls through to the default return-1 — which silently holds the
+# schedule at frame 1). We coerce weird inputs here.
+_VALID_RESET_MODES = ("word", "line", "never", "looped", "pingpong")
+
+
+def _normalize_reset_mode(value):
+    """Coerce a reset-mode value into one of the strings sequence_frame
+    recognises. The pipeline has been observed handing us things like
+    'word$word' (the schedule JSON parser concatenated `$word` twice
+    on a particular workflow path), which silently dropped the
+    schedule into frame-1 hold because it doesn't match any of
+    'word' / 'line' / 'never' / 'looped' / 'pingpong' in the
+    sequence_frame branch.
+
+    Strategy: take the first '$'-separated segment, then map any
+    unknown token to 'word' (the safe default — animation restarts on
+    every word change, which is the original behaviour the user
+    wanted when they picked the Preset Color Animations node).
+    """
+    if value is None:
+        return "word"
+    s = str(value)
+    # Drop anything past the first '$' (the second $word suffix bug).
+    if "$" in s:
+        s = s.split("$", 1)[0]
+    s = s.strip()
+    if s in _VALID_RESET_MODES:
+        return s
+    if not s:
+        return "word"
+    # Unknown mode → log once and fall back to 'word'.
+    return "word"
 
 
 # --------------------------------------------------------------------------- #
