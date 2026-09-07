@@ -345,6 +345,16 @@ class speech2text:
             # We rely on this for both transcription_data and
             # framestamps_string outputs.
             #
+            # condition_on_previous_text=False is CRITICAL for audio
+            # longer than ~30s. Default True feeds each segment's text
+            # back into the next segment as a prompt, which causes
+            # hallucination accumulation on long files (model drifts
+            # into repetition, premature stop, garbage output). We
+            # turn it off so each 30s window is transcribed in
+            # isolation - more accurate, slightly less coherent
+            # across windows, but for caption use coherence doesn't
+            # matter.
+            #
             # fp16=False on CPU because fp16 inference only works on
             # CUDA; on CPU it silently downcasts and crashes. Whisper
             # auto-detects CUDA and uses fp16 there.
@@ -354,6 +364,7 @@ class speech2text:
                 word_timestamps=True,
                 verbose=False,
                 fp16=False,
+                condition_on_previous_text=False,
             )
             words: list[tuple[str, float, float]] = []
             for seg in result.get("segments", []) or []:
