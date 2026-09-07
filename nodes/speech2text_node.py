@@ -227,7 +227,14 @@ class speech2text:
                 }),
                 "language": ("STRING", {
                     "default": "auto",
-                    "placeholder": "auto (default) or ISO code: zh, en, ja, ko, es, fr, de, ru, ar ...",
+                    # The placeholder used to read "auto (default) or
+                    # ISO code: ..." which got some users filling in
+                    # the literal word "language". Make the default
+                    # value "auto" the obvious correct choice by
+                    # repeating it in the placeholder, and make it
+                    # impossible to misread the field name as the
+                    # expected input.
+                    "placeholder": "auto / en / zh / ja / ko / es / fr / de / ru / ar ...",
                 }),
                 "spell_check_language": (cls._spell_check_choices(), {"default": "English", "display": "dropdown"}),
                 "framestamps_max_chars": ("INT", {"default": 40, "step": 1, "display": "number"}),
@@ -259,9 +266,7 @@ class speech2text:
             fps: int = 30, transcription_mode: str = "fill",
             uppercase: bool = True, **_):
         audio = _load_audio(audio_file)
-        lang = (language or "auto").strip().lower()
-        if lang in ("", "auto", "detect"):
-            lang = None  # let Whisper auto-detect
+        lang = _resolve_language(language)
         words = self._transcribe(audio, asr_model, lang)
         words = _spell_correct(words, spell_check_language)
 
@@ -398,6 +403,122 @@ class speech2text:
 # --------------------------------------------------------------------------- #
 # Helpers                                                                     #
 # --------------------------------------------------------------------------- #
+# Maps human-friendly language names to ISO 639-1 codes that Whisper
+# accepts. Common misspellings + auto-detect keywords + full names all
+# resolve to the right ISO code or to None (= auto-detect).
+_LANGUAGE_ALIASES: dict[str, str | None] = {
+    # auto-detect
+    "": None,
+    "auto": None,
+    "detect": None,
+    "auto-detect": None,
+    "automatic": None,
+    "language": None,  # user typed the placeholder / field name
+    "none": None,
+    "null": None,
+    # English variants
+    "english": "en",
+    "en": "en",
+    "eng": "en",
+    "英文": "en",
+    # Chinese variants
+    "chinese": "zh",
+    "zh": "zh",
+    "中文": "zh",
+    "汉语": "zh",
+    "普通话": "zh",
+    "mandarin": "zh",
+    "cantonese": "yue",  # Whisper supports yue (limited)
+    "粤语": "yue",
+    # Japanese variants
+    "japanese": "ja",
+    "ja": "ja",
+    "jpn": "ja",
+    "日文": "ja",
+    "日本語": "ja",
+    "日语": "ja",
+    # Korean variants
+    "korean": "ko",
+    "ko": "ko",
+    "kor": "ko",
+    "韩文": "ko",
+    "韓国語": "ko",
+    "韩语": "ko",
+    # European
+    "spanish": "es",
+    "es": "es",
+    "spa": "es",
+    "西班牙语": "es",
+    "french": "fr",
+    "fr": "fr",
+    "fra": "fr",
+    "法语": "fr",
+    "german": "de",
+    "de": "de",
+    "deu": "de",
+    "ger": "de",
+    "德语": "de",
+    "italian": "it",
+    "it": "it",
+    "ita": "it",
+    "意大利语": "it",
+    "portuguese": "pt",
+    "pt": "pt",
+    "por": "pt",
+    "葡萄牙语": "pt",
+    "russian": "ru",
+    "ru": "ru",
+    "rus": "ru",
+    "俄语": "ru",
+    # Middle East / others
+    "arabic": "ar",
+    "ar": "ar",
+    "ara": "ar",
+    "阿拉伯语": "ar",
+    "hindi": "hi",
+    "hi": "hi",
+    "印地语": "hi",
+    "thai": "th",
+    "th": "th",
+    "泰语": "th",
+    "vietnamese": "vi",
+    "vi": "vi",
+    "越南语": "vi",
+}
+
+
+def _resolve_language(raw: str | None) -> str | None:
+    """Normalise the user's language input to a Whisper ISO code.
+
+    Accepts ISO codes (`en`, `zh`, ...), full names (`english`,
+    `chinese`), native-script names (`中文`, `日本語`), and
+    placeholder / misspellings (`language`, `detect`, ...).
+
+    Returns:
+        ISO 639-1 code (`en`, `zh`, ...) for Whisper's
+        `language=` parameter, or None to let Whisper auto-detect.
+    """
+    from ..helpers.logger import logger
+
+    if raw is None:
+        return None
+    key = str(raw).strip().lower()
+    if key in _LANGUAGE_ALIASES:
+        return _LANGUAGE_ALIASES[key]
+    # Fallback: 2-3 letter ASCII alphabetic input is treated as a
+    # direct ISO code attempt. Anything else we don't recognise ->
+    # auto-detect with a warning so the user knows we ignored their
+    # input rather than silently doing the wrong thing.
+    if key.isalpha() and 2 <= len(key) <= 3:
+        return key
+    logger().warning(
+        "Whisper: unrecognised language=%r; falling back to "
+        "auto-detect. Use 'auto', an ISO code (en/zh/ja/ko/...), or "
+        "a full name (english/chinese/...).", raw,
+    )
+    return None
+
+
 def _has_meaningful_content(token: str) -> bool:
     """True if `token` carries at least one alphanumeric / CJK char.
 
