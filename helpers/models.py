@@ -15,9 +15,10 @@ the user can:
 future Whisper node, etc.) gets its own subdirectory so the user can
 manage them independently. For example:
 
-  - models/Mana/SpeechRecognition/   <- wav2vec2 weights
-  - models/Mana/Whisper/             <- future
-  - models/Mana/OCR/                 <- future
+  - models/Mana/SpeechRecognition/Whisper/   <- Whisper .pt weights
+  - models/Mana/SpeechRecognition/           <- legacy (HuggingFace)
+  - models/Mana/TextToSpeech/                <- Bark weights
+  - models/Mana/OCR/                         <- future
 
 The `get_feature_models_dir(name)` helper creates the subdir on
 demand. HuggingFace's `from_pretrained(cache_dir=...)` will then

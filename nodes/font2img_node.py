@@ -82,13 +82,15 @@ class font2img:
             from ..helpers.logger import logger
             if transcription is not None:
                 # Transcription was connected but produced no text.
-                # Most common cause: wav2vec2 model doesn't match the
-                # audio language, or the audio is silent / music.
+                # Most common cause: audio is silent, very short, or
+                # heavy background music that even Whisper can't decode.
                 logger().warning(
                     "Text to Image: transcription was provided but "
-                    "produced 0 words. Check that the wav2vec2 model "
-                    "matches the audio language and the audio contains "
-                    "speech. Output will be blank frames."
+                    "produced 0 words. Check that the audio contains "
+                    "audible speech (not pure music), is at least a "
+                    "few seconds long, and isn't silent. Switching to "
+                    "whisper-medium or whisper-large-v3 helps on noisy "
+                    "audio. Output will be blank frames."
                 )
             else:
                 logger().warning(

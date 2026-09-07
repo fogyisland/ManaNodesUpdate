@@ -232,28 +232,23 @@ Canvas Properties:
 | 参数 | 类型 | 默认 | 说明 |
 |------|------|------|------|
 | `audio_file` | STRING | - | 音频文件路径或 URL。本地文件：`H:\ComfyUI\input\audio\myfile.wav`。URL：`https://example.com/audio.mp3` |
-| `wav2vec2_model` | dropdown | jonatasgrosman/wav2vec2-large-xlsr-53-english | wav2vec2 模型。9 个预置模型。**模型必须匹配音频语言** |
-| `spell_check_language` | dropdown | English | 拼写校正语言 |
+| `asr_model` | dropdown | whisper-small | Whisper 模型档位。5 档可选。**自动检测 99 种语言**，无需按语言切换 |
+| `language` | STRING | auto | 强制指定语言（ISO 639-1 码，如 `zh` / `en` / `ja`）。默认 `auto` 让 Whisper 自动检测 |
+| `spell_check_language` | dropdown | English | 拼写校正语言（仅拉丁字母生效） |
 | `framestamps_max_chars` | INT | 25 | 字幕最大字符数。超过则新起一行 |
 | `fps` | INT | 30 | 帧率。决定每个时间戳对应的帧号 |
 | `transcription_mode` | dropdown | fill | 见下表 |
 | `uppercase` | BOOLEAN | true | 是否转为大写 |
 
-### wav2vec2 模型选择
+### Whisper 模型档位选择
 
-| 模型 | 语言 |
-|------|------|
-| `wav2vec2-large-xlsr-53-english` | 英语 |
-| `wav2vec2-large-xlsr-53-spanish` | 西班牙语 |
-| `wav2vec2-large-xlsr-53-french` | 法语 |
-| `wav2vec2-large-xlsr-53-german` | 德语 |
-| `wav2vec2-large-xlsr-53-italian` | 意大利语 |
-| `wav2vec2-large-xlsr-53-portuguese` | 葡萄牙语 |
-| `wav2vec2-large-xlsr-53-russian` | 俄语 |
-| `wav2vec2-base-960h` | 英语（基础） |
-| `wav2vec2-large-960h-lv60-self` | 英语（高质量） |
-
-**自定义模型**：在文本框输入任何 HuggingFace 模型 ID
+| 模型 | 大小 | 适用场景 |
+|------|------|----------|
+| `whisper-tiny` | 75 MB | 仅测试 / 实时优先 / 低算力 |
+| `whisper-base` | 140 MB | 简单英文短句 |
+| `whisper-small` | 460 MB | **平衡首选**（中文够用，下载快） |
+| `whisper-medium` | 1.5 GB | 中文歌曲 / 多语种混合 |
+| `whisper-large-v3` | 3 GB | 最高精度 / 嘈杂音频 |
 
 ### transcription_mode 三种模式对比
 
@@ -318,13 +313,15 @@ Canvas Properties:
 
 **Q: 转录是空的？**
 - 检查音频文件是否有效（尝试用 VLC 打开）
-- 确认 wav2vec2 模型语言匹配音频
+- Whisper 自动检测语言；如失败，尝试在 `language` 字段强制指定（`zh` / `en` / `ja` 等）
+- 确认音频不是纯静音 / 纯背景音乐（Whisper 也需要人声才能识别）
 - 查看 ComfyUI 控制台是否有错误
 
 **Q: 转录错字很多？**
-- 启用 spell_check（默认开启）
-- 尝试不同模型
-- 音频质量差的话，wav2vec2 准确率下降
+- 启用 spell_check（默认开启；CJK 自动跳过）
+- 切到 `whisper-medium` 或 `whisper-large-v3`（小模型在嘈杂音频上精度差）
+- 中文音频切到 `language="zh"` 强制指定能提升 ~10%
+- 歌曲场景建议先人声分离（`audio-separator` / UVR）再喂节点
 
 **Q: 处理太慢？**
 - 第一次运行慢是正常的（下载模型）
@@ -388,7 +385,8 @@ Canvas Properties:
 将 Split Video 的 `audio_file` 连接到 Speech Recognition 的 `audio_file` 输入。
 
 **关键参数**：
-- `wav2vec2_model` - 选对应语言
+- `asr_model` - 默认 `whisper-small`；嘈杂音频选 `whisper-medium` 或 `whisper-large-v3`
+- `language` - 默认 `auto`；已知音频语言可强制指定（如中文填 `zh`）提升精度
 - `transcription_mode`:
   - **word** - 卡拉OK（每帧一个词）
   - **line** - 标准字幕（每行累积）
@@ -485,12 +483,12 @@ Canvas Properties:
 **解决**：
 - 检查 Speech Recognition 的 fps 设置
 - 检查 frame_count 与 frame_limit 一致
-- 检查 wav2vec2 模型的语言与音频匹配
+- 已知音频语言时，在 `language` 字段强制指定（如 `zh`）可提升精度
 
 ### 错误 5：转换非常慢
 
 **原因**：
-- 第一次运行 wav2vec2 模型（下载）
+- 第一次运行 Whisper 模型（下载 ~75 MB - 3 GB，取决于档位）
 - 音频文件很大（> 10 分钟）
 - 显卡/CPU 性能不足
 
@@ -520,15 +518,16 @@ Canvas Properties:
 
 ### 技巧 4：使用相同音频创建不同语言版本
 
-- 准备多个 wav2vec2 模型
-- 用同一个音频文件，分别用不同模型转录
-- 比较输出质量
+Whisper 自动检测语言，无需为每种语言准备不同模型。要切语言只需在 `language` 字段指定：
+- 中文：`language = "zh"`
+- 日文：`language = "ja"`
+- 英文：`language = "en"`
 
 ### 技巧 5：避免重复下载模型
 
-模型被 `lru_cache` 缓存。如果需要清空缓存：
-- 重启 ComfyUI
-- 或删除 `H:\ComfyUI\venv\Lib\site-packages\transformers\models\...` 下的缓存
+Whisper 模型被 `lru_cache` 缓存，权重落在
+`<ComfyUI>/models/Mana/SpeechRecognition/Whisper/<size>.pt`。
+如需清空缓存：删除该目录或重启 ComfyUI。
 
 ---
 
@@ -551,7 +550,8 @@ Canvas Properties:
 
 **Speech Recognition**:
 - audio_file: Split Video 输出
-- wav2vec2_model: `wav2vec2-large-xlsr-53-english`
+- asr_model: `whisper-small`（默认；英文够用）
+- language: `en`（已知是英文，强制指定可提精度）
 - spell_check_language: English
 - framestamps_max_chars: 40
 - fps: **30**（与视频帧率一致）

@@ -19,7 +19,7 @@ listed.
 | 🖼️ Canvas Properties | `Canvas Properties` | `canvas`, `background`, `image size` |
 | ⏰ Scheduled Values | `Scheduled Values` | `animation`, `keyframe`, `timeline`, `chart` |
 | 🌈 Preset Color Animations | `Preset Color Animations` | `color`, `palette`, `rainbow`, `gradient` |
-| 🎤 Speech Recognition | `Speech Recognition` | `whisper`, `wav2vec`, `transcribe`, `stt`, `asr` |
+| 🎤 Speech Recognition | `Speech Recognition` | `whisper`, `speech`, `transcribe`, `stt`, `asr`, `caption`, `中文` |
 | 📣 Generate Audio | `Generate Audio` | `tts`, `bark`, `speech`, `voice` |
 | 🎞️ Split Video | `Split Video` | `video`, `frames`, `extract`, `ffmpeg` |
 | 🎥 Combine Video | `Combine Video` | `video`, `render`, `mp4`, `mux` |
