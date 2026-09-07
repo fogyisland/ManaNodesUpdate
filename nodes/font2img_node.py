@@ -626,15 +626,28 @@ class font2img:
         main_shadow_offset_y = _resolve_property(kwargs['font']['shadow_offset_y'], 1, 0)
         line_spacing = kwargs['canvas']['line_spacing']
 
+        # Coerce colour values to PIL-safe shapes here. The renderer
+        # path below passes fill= straight to PIL.ImageDraw.text, which
+        # rejects a bare list with "color must be int or tuple". A
+        # schedule-driven font_color arrives as [r, g, b] (list), so
+        # we convert at the boundary rather than scatter .tuple() calls
+        # inside the loop.
+        main_color = _normalize_color(font_color)
+        main_border = _normalize_color(border_color)
+        main_shadow = _normalize_color(shadow_color)
+        tagged_color = _normalize_color(tagged_font_color)
+        tagged_border = _normalize_color(tagged_border_color)
+        tagged_shadow = _normalize_color(tagged_shadow_color)
+
         # Split the line into (text_chunk, font, color_tuple) groups so we
         # can do a single pass per contiguous style region. This is the
         # same behavior the old char-by-char loop implemented, but at
         # O(groups) cost instead of O(chars).
         segments = _split_tagged_segments(
             text,
-            main=(font, font_color, border_color, shadow_color,
+            main=(font, main_color, main_border, main_shadow,
                   main_border_width, main_shadow_offset_x, main_shadow_offset_y),
-            tagged=(tagged_font, tagged_font_color, tagged_border_color, tagged_shadow_color,
+            tagged=(tagged_font, tagged_color, tagged_border, tagged_shadow,
                     tagged_border_width, tagged_shadow_offset_x, tagged_shadow_offset_y),
         )
 
@@ -834,6 +847,37 @@ class font2img:
 @lru_cache(maxsize=256)
 def _get_cached_font(font_file: str, font_size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(font_file, font_size)
+
+
+def _normalize_color(value, fallback="white"):
+    """Convert any colour value to a PIL-safe form (str / tuple of ints).
+
+    PIL's ImageDraw.text() accepts:
+      - a CSS colour string ('white', '#ff0000')
+      - a 3- or 4-tuple of ints (R, G, B[, A])
+
+    Our pipeline hands it a mixture of:
+      - bare strings ('white', 'red') from widget defaults
+      - 3-element lists / tuples from Preset Color Animations
+        schedules — e.g. [255, 0, 0]
+      - integers (rare — pre-existing widget quirk)
+
+    PIL's getink explodes on a list with:
+        TypeError: color must be int or tuple
+    so we coerce list-of-ints -> tuple-of-ints here, well before
+    the call.
+    """
+    if value is None:
+        return fallback
+    if isinstance(value, str):
+        return value
+    if isinstance(value, int):
+        return value
+    if isinstance(value, (list, tuple)):
+        # Already a list/tuple of ints (likely an RGB colour).
+        # Re-wrap as a tuple so PIL's getink accepts it.
+        return tuple(value)
+    return fallback
 
 
 # --------------------------------------------------------------------------- #
