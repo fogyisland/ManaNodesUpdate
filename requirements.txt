@@ -26,11 +26,14 @@ Pillow>=10.0.0
 # deliberately when a future major release lands.
 moviepy>=1.0.3,<3.0
 
-# Speech-to-text (wav2vec2). transformers 5.x dropped a few legacy
-# arguments we don't use, so 4.30+ is fine across the board.
-transformers>=4.30
+# Speech-to-text (Whisper). We swapped wav2vec2 for openai-whisper
+# because Whisper handles noisy audio / songs far better and outputs
+# word-level timestamps natively (no manual grouping). openai-whisper
+# pulls in tiktoken + ffmpeg-python as transitive deps; ffmpeg itself
+# must be installed on the host (apt/brew/choco install ffmpeg).
+openai-whisper>=20231117
 
-# Audio decoding for wav2vec2.
+# Audio decoding for Whisper.
 librosa>=0.10
 
 # Image / video IO. Headless is preferred for ComfyUI servers

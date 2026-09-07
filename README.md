@@ -32,7 +32,7 @@
 
 - 描边改用 PIL 原生 `stroke_width`，不再逐像素循环
 - 字体加载用 `lru_cache`（256 项）——之前每帧重新解析 ttf
-- wav2vec2 + Bark 模型权重用 `lru_cache`——不再每次运行重新下载 GB 级数据
+- Whisper + Bark 模型权重用 `lru_cache`——不再每次运行重新下载 GB 级数据
 - 视频输入目录扫描用类级缓存
 - 字符循环中预计算字体度量
 
@@ -57,7 +57,7 @@
 | 🖼️ **画布属性** | `Canvas Properties` | 输出尺寸、背景颜色/图片、内边距、对齐。 |
 | ⏰ **调度值** | `Scheduled Values` | 交互式关键帧图表，驱动任意字体属性随时间变化。 |
 | 🌈 **预设颜色动画** | `Preset Color Animations` | 循环播放 rainbow/sunset/sky/ocean 等调色板。 |
-| 🎤 **语音识别** | `Speech Recognition` | wav2vec2 转录 -> 字幕时间线。 |
+| 🎤 **语音识别** | `Speech Recognition` | Whisper 转录 -> 字幕时间线（99 种语言自动检测）。 |
 | 📣 **生成音频** | `Generate Audio` | Bark 文字转语音。 |
 | 🎞️ **分割视频** | `Split Video` | 从视频中提取帧 + 音频段。 |
 | 🎥 **合成视频** | `Combine Video` | 把 IMAGE 批次拼成 MP4。 |
@@ -306,7 +306,7 @@ ComfyUI-Mana-Nodes/
 - **v2.0 维护：** [fogyisland](https://github.com/fogyisland)
 - 为 [ComfyUI](https://github.com/comfyanonymous/ComfyUI) 构建
 - 使用的模型：
-  - [wav2vec2](https://huggingface.co/models?search=wav2vec2)（HuggingFace）
+  - [Whisper](https://github.com/openai/whisper)（OpenAI）
   - [Bark](https://huggingface.co/suno/bark)（Suno）
 
 ## 🤝 贡献
@@ -357,7 +357,7 @@ refactored; **no behavior changes for existing workflows**.
 
 - Border drawing now uses PIL's native `stroke_width`
 - `lru_cache` on font loading (256 entries)
-- `lru_cache` on wav2vec2 + Bark model weights
+- `lru_cache` on Whisper + Bark model weights
 - Class-level cache on video input directory scan
 - Pre-computed font metrics in the per-character loop
 

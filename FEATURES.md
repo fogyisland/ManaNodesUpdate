@@ -157,16 +157,27 @@ Scheduled Values.
 
 ## 6. Speech Recognition 🎤
 
-Transcribes an audio file using wav2vec2 and emits a transcription
-object that the Text to Image Generator can consume directly.
+Transcribes an audio file using OpenAI Whisper and emits a
+transcription object that the Text to Image Generator can consume
+directly. Whisper auto-detects 99 languages (Chinese, English,
+Japanese, Korean, Spanish, French, German, Russian, Arabic + 90
+more) so a single model covers everything. Output quality on
+noisy / song audio is far better than the old wav2vec2 backend
+because Whisper was trained on a much broader audio distribution.
 
 ### Inputs
 
 - `audio_file` (STRING) - Path or URL.
-- `wav2vec2_model` (dropdown) - 9 curated XLSR models. You can also
-  type a different HuggingFace model id.
+- `asr_model` (dropdown) - Whisper size:
+  - `whisper-tiny` (75 MB, fastest, lower accuracy)
+  - `whisper-base` (140 MB, decent English)
+  - `whisper-small` (460 MB, balanced) — **default**
+  - `whisper-medium` (1.5 GB, strong multilingual)
+  - `whisper-large-v3` (3 GB, best accuracy)
+- `language` (STRING, default `auto`) - Force a specific ISO 639-1
+  code (`zh`, `en`, `ja`, ...). Leave `auto` to let Whisper detect.
 - `spell_check_language` - Optional spell correction (requires
-  `pyspellchecker`).
+  `pyspellchecker`). CJK / non-spaced languages short-circuit.
 - `framestamps_max_chars` - Max characters per caption line.
 - `fps` - Frames per second (default 30).
 - `transcription_mode` - `word` (one word per line), `line` (one
@@ -182,8 +193,14 @@ object that the Text to Image Generator can consume directly.
 
 ### Performance
 
-The wav2vec2 model is cached after the first run. Subsequent
-transcriptions of the same model only pay the inference cost.
+The Whisper model is cached after the first run under
+`models/Mana/SpeechRecognition/Whisper/`. Subsequent transcriptions
+of the same model size only pay the inference cost.
+
+### Requirements
+
+`ffmpeg` must be installed on the host (apt / brew / choco
+install ffmpeg). openai-whisper shells out to ffmpeg for decoding.
 
 ---
 
