@@ -7,11 +7,27 @@ from ..helpers.font_loader import combined_font_list
 # keyframe list (the format emitted by Scheduled Values /
 # Preset Color Animations), the same list is broadcast to every property
 # in this set. Per-property dict input is also supported for advanced use.
+# Properties font2img treats as "animatable" — i.e. it expects a
+# (value, animation_reset) tuple. When `scheduled_values` is a flat
+# keyframe list (the format emitted by Scheduled Values /
+# Preset Color Animations), the same list is broadcast to every
+# property in this set. Per-property dict input is also supported for
+# advanced use.
+#
+# `scheduled_values` carries `y` values that match the property's
+# type: scalar ints for the geometry props below, [r, g, b] lists
+# for the colour props. We split them into two groups so a colour
+# preset only fans out to colour widgets — otherwise a Preset Color
+# Animations schedule would land on `x_offset` and produce a value
+# like [255, 0, 0] where a float offset was expected.
 _ANIMATABLE_PROPS = (
     "kerning", "border_width",
     "shadow_offset_x", "shadow_offset_y",
     "font_size", "x_offset", "y_offset", "rotation",
     "rotation_anchor_x", "rotation_anchor_y",
+)
+
+_COLOR_ANIMATABLE_PROPS = (
     "font_color", "border_color", "shadow_color",
 )
 
@@ -94,18 +110,36 @@ class text_graphic_element:
         )
 
         # If a non-empty flat list was supplied, broadcast to every
-        # animatable property. If a dict was supplied, look up per
-        # property; if a key is missing, fall back to the widget value.
+        # animatable property. Colour schedules only fan out to colour
+        # props, and scalar schedules only to scalar props — the two
+        # groups have incompatible `y` value shapes ([r,g,b] vs int),
+        # so we can't share a single broadcast.
+        # If a dict was supplied, look up per property; if a key is
+        # missing, fall back to the widget value.
         # An empty list means "no schedule" — leave widget values alone.
+        all_animatable = _ANIMATABLE_PROPS + _COLOR_ANIMATABLE_PROPS
         if isinstance(keyframes, list):
-            per_property = (
-                {prop: (keyframes, reset_mode) for prop in _ANIMATABLE_PROPS}
-                if keyframes else {}
-            )
+            if not keyframes:
+                per_property = {}
+            else:
+                # Detect colour vs scalar schedule by inspecting the
+                # first `y` value. A flat list of RGB triplets means
+                # colour; a list of ints/floats means scalar. This is
+                # what Preset Color Animations vs Scheduled Values
+                # emit respectively.
+                first_y = keyframes[0].get("y") if keyframes else None
+                is_colour_schedule = isinstance(first_y, (list, tuple))
+                target_props = (
+                    _COLOR_ANIMATABLE_PROPS if is_colour_schedule
+                    else _ANIMATABLE_PROPS
+                )
+                per_property = {
+                    prop: (keyframes, reset_mode) for prop in target_props
+                }
         elif isinstance(keyframes, dict):
             per_property = {
                 prop: (keyframes[prop], reset_mode)
-                for prop in _ANIMATABLE_PROPS
+                for prop in all_animatable
                 if prop in keyframes
             }
         else:
@@ -119,7 +153,7 @@ class text_graphic_element:
         }
         # Add the animatable properties, preferring the scheduled list
         # over the widget's static value.
-        for prop in _ANIMATABLE_PROPS:
+        for prop in (_ANIMATABLE_PROPS + _COLOR_ANIMATABLE_PROPS):
             if prop in per_property:
                 schedule, reset = per_property[prop]
                 settings[prop] = (schedule, reset)
