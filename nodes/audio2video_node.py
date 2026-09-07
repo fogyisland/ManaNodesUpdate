@@ -13,6 +13,7 @@ import numpy as np
 import torch
 from moviepy import AudioFileClip, ImageSequenceClip
 
+from ..helpers.logger import logger
 from ..helpers.utils import tensor2pil
 
 
@@ -62,8 +63,18 @@ class audio2video:
     def _write_video(pil_frames, fps, audio_file, out_path):
         numpy_frames = [np.asarray(f) for f in pil_frames]
         clip = ImageSequenceClip(numpy_frames, fps=fps)
-        if audio_file is not None:
-            clip = clip.with_audio(AudioFileClip(audio_file))
+        if audio_file:
+            try:
+                clip = clip.with_audio(AudioFileClip(audio_file))
+            except (OSError, ValueError) as exc:
+                # Bad path / corrupt file / decoder mismatch. The
+                # video frames are still valid — log loudly and
+                # continue without audio rather than fail the whole
+                # export.
+                logger().warning(
+                    "Combine Video: skipped audio (%s); writing "
+                    "video-only output to %s.", exc, out_path,
+                )
         clip.write_videofile(out_path, codec="libx264")
 
     @staticmethod
@@ -80,8 +91,8 @@ class audio2video:
 def _to_pil(frame) -> "PIL.Image.Image":
     """Normalize a single ComfyUI IMAGE frame (H,W,C float 0-1) to PIL."""
     if not isinstance(frame, torch.Tensor):
-        # Allow PIL/numpy as well in case upstream code changes shape.
-        return tensor2pil(torch.as_tensor(frame)) if hasattr(torch, "as_tensor") else frame
+        # Allow numpy / PIL inputs in case upstream shape changes.
+        return tensor2pil(torch.as_tensor(frame))
     return tensor2pil(frame)
 
 

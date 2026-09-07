@@ -48,13 +48,20 @@ class scheduled_values:
     FUNCTION = "run"
 
     def run(self, **kwargs):
-        scheduled_values = str(kwargs['scheduled_values'])
+        scheduled_values = kwargs.get('scheduled_values')
         animation_reset = kwargs.get('animation_reset')
-        # this should be ok but maybe change it
-        if scheduled_values == '[]':
-            raise ValueError("scheduled_values is required and cannot be an empty list.")
 
-        # this could also be more elegant
-        scheduled_values = f"{scheduled_values}${animation_reset}"
+        # Empty schedule (the default state when the chart hasn't been
+        # touched yet) is a valid input — Font Properties treats it as
+        # "no animation, use widget values". Don't raise; just hand
+        # back an empty string so downstream consumers skip it.
+        # Treat None, "", whitespace, and the literal "[]" / "{}"
+        # sentinels as empty. Str() happens AFTER the empty check so
+        # we don't turn None into the string "None".
+        if scheduled_values is None:
+            return ("",)
+        scheduled_values = str(scheduled_values).strip()
+        if not scheduled_values or scheduled_values in ("[]", "{}"):
+            return ("",)
 
-        return (scheduled_values,)
+        return (f"{scheduled_values}${animation_reset}",)

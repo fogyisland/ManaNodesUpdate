@@ -91,7 +91,19 @@ class text2speech:
     def INPUT_TYPES(cls):
         return {
             "required": {
-            "text": ("STRING", {"display": "text", "placeholder": "[laughter]\n[laughs]\n[sighs]\n[music]\n[gasps]\n[clears throat]\n— or … for hesitations\n♪ for song lyrics\nCapitalization for emphasis of a word\nMAN/WOMAN: for bias towards speaker", "multiline": True}),                "filename_prefix": ("STRING", {"display": "text", "default": "audio\\audio"})
+                "text": ("STRING", {
+                    "display": "text",
+                    "multiline": True,
+                    "placeholder": (
+                        "[laughter]\n[laughs]\n[sighs]\n[music]\n"
+                        "[gasps]\n[clears throat]\n"
+                        "— or … for hesitations\n"
+                        "♪ for song lyrics\n"
+                        "Capitalization for emphasis of a word\n"
+                        "MAN/WOMAN: for bias towards speaker"
+                    ),
+                }),
+                "filename_prefix": ("STRING", {"display": "text", "default": "audio\\audio"}),
             },
         }
 
@@ -101,12 +113,8 @@ class text2speech:
     FUNCTION = "run"
     OUTPUT_NODE = True
 
-    def run(self, text, **kwargs):
-        # filename_prefix comes through **kwargs because it's not in the
-        # explicit signature; support both list and scalar (INPUT_IS_LIST).
-        prefix = kwargs.get('filename_prefix', 'audio\\audio')
-        if isinstance(prefix, list):
-            prefix = prefix[0]
+    def run(self, text: str, filename_prefix: str = "audio\\audio", **_):
+        prefix = filename_prefix or "audio\\audio"
 
         full_path = os.path.join(folder_paths.get_output_directory(), os.path.normpath(prefix))
         if not full_path.endswith('.wav'):

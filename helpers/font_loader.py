@@ -50,11 +50,27 @@ def combined_font_list() -> dict[str, str]:
 
 
 @lru_cache(maxsize=256)
-def get_font(font_file: str, font_size: int) -> ImageFont.FreeTypeFont:
+def get_font(font_file, font_size) -> ImageFont.FreeTypeFont:
     """LRU-cached FreeType font loader.
 
     Pillow's truetype constructor parses the font file (~50-200 ms on a
     cold call). Caching by (file, size) means a 200-frame render pays
     that cost once instead of 200 times.
+
+    `font_file` and `font_size` are coerced via `str`/`int` so that an
+    upstream caller that slipped through a list-shaped value doesn't
+    blow up `lru_cache`'s hash with `TypeError: unhashable type: 'list'`.
+    The error is reported with the original shape so it's still
+    diagnosable.
     """
+    if not isinstance(font_file, str):
+        raise TypeError(
+            f"get_font expected str font_file, got "
+            f"{type(font_file).__name__}: {font_file!r}"
+        )
+    if not isinstance(font_size, int):
+        raise TypeError(
+            f"get_font expected int font_size, got "
+            f"{type(font_size).__name__}: {font_size!r}"
+        )
     return ImageFont.truetype(font_file, font_size)

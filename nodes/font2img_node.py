@@ -42,14 +42,21 @@ class font2img:
         #   - ["foo.ttf"]             -> single-element list/tuple
         #   - ["foo.ttf", "word"]     -> (value, reset) tuple flattened
         #   - {"font_file": "..."}    -> dict carrying the key we want
-        if isinstance(font_name, dict):
-            font_name = font_name.get("font_file", "")
-        if isinstance(font_name, (list, tuple)):
-            if not font_name:
-                raise ValueError("font_name list/tuple is empty")
-            font_name = font_name[0]
+        # Recursive unwrap: keep peeling lists/dicts until we either hit
+        # a string or something we can't recognize.
+        depth = 0
+        while depth < 5 and not isinstance(font_name, str):
             if isinstance(font_name, dict):
-                font_name = font_name.get("font_file", "")
+                font_name = font_name.get("font_file", font_name.get("name", ""))
+            elif isinstance(font_name, (list, tuple)):
+                if not font_name:
+                    raise ValueError("font_name list/tuple is empty")
+                font_name = font_name[0]
+            else:
+                raise ValueError(
+                    f"font_name has unrecognized type {type(font_name).__name__}: {font_name!r}"
+                )
+            depth += 1
         if not isinstance(font_name, str) or not font_name:
             raise ValueError(f"font_name must be a non-empty string, got {font_name!r}")
         # Resolve the registered display name -> on-disk path. If the
@@ -63,6 +70,34 @@ class font2img:
                 f"Unknown font {font_name!r}. Make sure a Font Properties "
                 "node is connected to the `font` input, and that its "
                 "`font_file` dropdown selects a registered font."
+            )
+        # Normalize font_size too — keyframe lists reach here as
+        # `[{"x": 1, "y": 24}, ...]` (the raw schedule) instead of the
+        # already-interpolated int. Pull a representative int out.
+        if isinstance(font_size, (list, tuple)):
+            if not font_size:
+                raise ValueError("font_size list/tuple is empty")
+            # If these are keyframes [{x,y}], take the last value;
+            # otherwise take the first element.
+            if all(isinstance(d, dict) and "y" in d for d in font_size):
+                font_size = font_size[-1]["y"]
+            else:
+                font_size = font_size[0]
+        if isinstance(font_size, dict):
+            font_size = font_size.get("y", font_size.get("value", 0))
+        if not isinstance(font_size, int):
+            try:
+                font_size = int(font_size)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"font_size must be int-convertible, got {type(font_size).__name__}: {font_size!r}"
+                ) from exc
+        # Last-mile check: even if `font_file` looked like a string,
+        # some upstream path can hand us a list here. Convert
+        # defensively before lru_cache (which keys on the args).
+        if not isinstance(font_file, str):
+            raise ValueError(
+                f"font_file resolved to non-string {type(font_file).__name__}: {font_file!r}"
             )
         return get_font(font_file, font_size)
 
@@ -107,27 +142,36 @@ class font2img:
         #   - Speech Recognition produced no text (audio silent /
         #     wrong model for the language / audio too short)
         #   - User typed "{}" as text but didn't connect transcription
+        # Warn at most once per run — not per frame, not per re-render
+        # of the same workflow. A user iterating on a workflow with
+        # empty text shouldn't be spammed.
         if not text or not text.strip():
             from ..helpers.logger import logger
-            if transcription is not None:
-                # Transcription was connected but produced no text.
-                # Most common cause: audio is silent, very short, or
-                # heavy background music that even Whisper can't decode.
-                logger().warning(
-                    "Text to Image: transcription was provided but "
-                    "produced 0 words. Check that the audio contains "
-                    "audible speech (not pure music), is at least a "
-                    "few seconds long, and isn't silent. Switching to "
-                    "whisper-medium or whisper-large-v3 helps on noisy "
-                    "audio. Output will be blank frames."
-                )
-            else:
-                logger().warning(
-                    "Text to Image: text input is empty. Either type "
-                    "a string in the 'text' field or connect a Speech "
-                    "Recognition output to the 'transcription' input. "
-                    "Output will be blank frames."
-                )
+            warn_key = (transcription is not None,)
+            if not getattr(self, "_empty_text_warned", False) or (
+                self._empty_text_warned_key != warn_key
+            ):
+                self._empty_text_warned = True
+                self._empty_text_warned_key = warn_key
+                if transcription is not None:
+                    # Transcription was connected but produced no text.
+                    # Most common cause: audio is silent, very short, or
+                    # heavy background music that even Whisper can't decode.
+                    logger().warning(
+                        "Text to Image: transcription was provided but "
+                        "produced 0 words. Check that the audio contains "
+                        "audible speech (not pure music), is at least a "
+                        "few seconds long, and isn't silent. Switching to "
+                        "whisper-medium or whisper-large-v3 helps on noisy "
+                        "audio. Output will be blank frames."
+                    )
+                else:
+                    logger().warning(
+                        "Text to Image: text input is empty. Either type "
+                        "a string in the 'text' field or connect a Speech "
+                        "Recognition output to the 'transcription' input. "
+                        "Output will be blank frames."
+                    )
 
         frame_text_dict, is_structured_input = self.parse_text_input(text, kwargs)
         frame_text_dict = self.cumulative_text(frame_text_dict, frame_count)
@@ -206,16 +250,29 @@ class font2img:
 
     # Helper functions
     def animation_reset(self, animation_reset_mode, new_text, old_text, transcription_mode):
+        # `never` / `looped` / `pingpong` semantics: the animation
+        # should keep going regardless of text changes, so we never
+        # signal a reset. The previous fall-through returned False,
+        # which meant once an animation started it would never reset
+        # even when text changed — a silent correctness bug for any
+        # scheduled_values wiring that picked anything other than
+        # `word` or `line`.
         if animation_reset_mode == 'word':
             return new_text.split() != old_text.split()
-        elif animation_reset_mode == 'line':
+        if animation_reset_mode == 'line':
             new_text = self.remove_tags(new_text)
             old_text = self.remove_tags(old_text)
             if transcription_mode == 'line':
                 return new_text != old_text
             if transcription_mode == 'fill':
                 return len(new_text.split()) < len(old_text.split())
-        return False
+            return new_text != old_text
+        if animation_reset_mode in ('never', 'looped', 'pingpong', None):
+            return False
+        # Unknown mode — default to the most conservative behaviour
+        # (treat any text change as a reset) rather than silently
+        # swallowing updates.
+        return new_text != old_text
 
     @staticmethod
     def remove_tags(text):
@@ -357,25 +414,33 @@ class font2img:
                 sequence_frame_tagged_border_color = _seq(animation_started_frame_tagged_border_color, tagged_border_color_duration, animation_reset_tagged_border_color)
                 sequence_frame_tagged_shadow_color = _seq(animation_started_frame_tagged_shadow_color, tagged_shadow_color_duration, animation_reset_tagged_shadow_color)
 
-            def _current(seq, schedule, fallback):
-                return value_at(schedule, seq) if isinstance(schedule, list) else fallback
-
-            current_rotation = _current(sequence_frame_rotation, rotation, rotation)
-            current_y_offset = _current(sequence_frame_y_offset, y_offset, y_offset)
-            current_x_offset = _current(sequence_frame_x_offset, x_offset, x_offset)
-            current_font_size = _current(sequence_frame_font_size, font_size, font_size)
+            # Resolve every font / color / offset property to a
+            # scalar via the module-level helper. This handles all
+            # upstream shapes (tuple / keyframe list / dict / scalar).
+            current_rotation = _resolve_property(rotation, sequence_frame_rotation, rotation)
+            current_y_offset = _resolve_property(y_offset, sequence_frame_y_offset, y_offset)
+            current_x_offset = _resolve_property(x_offset, sequence_frame_x_offset, x_offset)
+            current_font_size = _resolve_property(font_size, sequence_frame_font_size, font_size)
             font = self.get_font(main_font_file, current_font_size)
 
-            current_font_color = _current(sequence_frame_font_color, font_color, font_color)
-            current_border_color = _current(sequence_frame_border_color, border_color, border_color)
-            current_shadow_color = _current(sequence_frame_shadow_color, shadow_color, shadow_color)
+            current_font_color = _resolve_property(font_color, sequence_frame_font_color, font_color)
+            current_border_color = _resolve_property(border_color, sequence_frame_border_color, border_color)
+            current_shadow_color = _resolve_property(shadow_color, sequence_frame_shadow_color, shadow_color)
 
             if highlight_font is not None:
-                current_tagged_font_size = _current(sequence_frame_tagged_font_size, tagged_font_size, tagged_font_size)
+                current_tagged_font_size = _resolve_property(
+                    tagged_font_size, sequence_frame_tagged_font_size, tagged_font_size,
+                )
                 tagged_font = self.get_font(tagged_font_file, current_tagged_font_size)
-                current_tagged_font_color = _current(sequence_frame_tagged_font_color, tagged_font_color, tagged_font_color)
-                current_tagged_border_color = _current(sequence_frame_tagged_border_color, tagged_border_color, tagged_border_color)
-                current_tagged_shadow_color = _current(sequence_frame_tagged_shadow_color, tagged_shadow_color, tagged_shadow_color)
+                current_tagged_font_color = _resolve_property(
+                    tagged_font_color, sequence_frame_tagged_font_color, tagged_font_color,
+                )
+                current_tagged_border_color = _resolve_property(
+                    tagged_border_color, sequence_frame_tagged_border_color, tagged_border_color,
+                )
+                current_tagged_shadow_color = _resolve_property(
+                    tagged_shadow_color, sequence_frame_tagged_shadow_color, tagged_shadow_color,
+                )
             else:
                 tagged_font = font
                 current_tagged_font_color = current_font_color
@@ -428,12 +493,16 @@ class font2img:
         # (passed through) or a (value, animation_reset) tuple from
         # text_graphic_element. `_font_prop` unwraps both shapes with
         # a sensible default. This avoids NameError crashes when an
-        # older version of Font Properties omits a field.
+        # Pull a font property out of the TEXT_GRAPHIC_ELEMENT dict and
+        # normalize it to a scalar. Routes through `_resolve_property`
+        # so the same shape variations (tuple / keyframe list / dict /
+        # scalar) work here as in the main render loop.
         def _font_prop(name, default=0):
             raw = kwargs.get('font', {}).get(name, default)
-            if isinstance(raw, tuple):
-                return raw[0] if raw[0] is not None else default
-            return raw if raw is not None else default
+            resolved = _resolve_property(raw, 1, raw if raw is not None else default)
+            if resolved is None:
+                return default
+            return resolved
 
         rotation_anchor_x = _font_prop('rotation_anchor_x', 0)
         rotation_anchor_y = _font_prop('rotation_anchor_y', 0)
@@ -504,18 +573,21 @@ class font2img:
         """
         highlight_font = kwargs.get('highlight_font', None)
         tagged_border_width = (
-            highlight_font['border_width'][0] if highlight_font else 1
+            _resolve_property(highlight_font['border_width'], 1, 1)
+            if highlight_font else 1
         )
         tagged_shadow_offset_x = (
-            highlight_font['shadow_offset_x'][0] if highlight_font else 0
+            _resolve_property(highlight_font['shadow_offset_x'], 1, 0)
+            if highlight_font else 0
         )
         tagged_shadow_offset_y = (
-            highlight_font['shadow_offset_y'][0] if highlight_font else 0
+            _resolve_property(highlight_font['shadow_offset_y'], 1, 0)
+            if highlight_font else 0
         )
 
-        main_border_width = kwargs['font']['border_width'][0]
-        main_shadow_offset_x = kwargs['font']['shadow_offset_x'][0]
-        main_shadow_offset_y = kwargs['font']['shadow_offset_y'][0]
+        main_border_width = _resolve_property(kwargs['font']['border_width'], 1, 0)
+        main_shadow_offset_x = _resolve_property(kwargs['font']['shadow_offset_x'], 1, 0)
+        main_shadow_offset_y = _resolve_property(kwargs['font']['shadow_offset_y'], 1, 0)
         line_spacing = kwargs['canvas']['line_spacing']
 
         # Split the line into (text_chunk, font, color_tuple) groups so we
@@ -565,22 +637,21 @@ class font2img:
             y += line_height + line_spacing
 
     def get_text_width(self, text, kwargs):
-        
         main_font = kwargs['font']
-        main_font_size = main_font['font_size'][0]
+        raw_font_size = main_font['font_size']
+        # Font Properties may wrap the scalar in a tuple (value, reset).
+        # Plain widget output gives a bare int; older versions might
+        # hand us a list/dict. Normalise via _resolve_property before
+        # casting.
+        main_font_size = _resolve_property(raw_font_size, 1, raw_font_size)
+        try:
+            main_font_size = int(main_font_size)
+        except (TypeError, ValueError):
+            main_font_size = 16  # sane fallback so we don't crash the layout calc
+
         main_font_file = main_font['font_file']
-
-        if isinstance(main_font_size, (list)):
-            main_font_size = max(d['y'] for d in main_font_size)
-        else:
-            main_font_size = main_font_size
-
-        # Load the font
         font = self.get_font(main_font_file, main_font_size)
-
-        # Measure the size of the text rendered in the loaded font
-        text_width = font.getlength(text)
-        return text_width
+        return font.getlength(text)
 
     def calculate_text_position(self, text_width, text_height, x_offset, y_offset, kwargs):
         text_alignment = kwargs['canvas']['text_alignment'] 
@@ -727,6 +798,54 @@ class font2img:
 @lru_cache(maxsize=256)
 def _get_cached_font(font_file: str, font_size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(font_file, font_size)
+
+
+# --------------------------------------------------------------------------- #
+# Property resolution                                                          #
+# --------------------------------------------------------------------------- #
+def _resolve_property(schedule, seq_frame: int, fallback=None):
+    """Pull a single scalar out of a TEXT_GRAPHIC_ELEMENT property.
+
+    `font['<prop>']` may arrive in any of these shapes depending on
+    whether `scheduled_values` was a keyframe list, a dict, empty, or
+    absent:
+
+      - ``(value, reset_mode)``        — common case, widget input
+      - ``([{x,y}, ...], reset_mode)`` — keyframe schedule
+      - ``"color_string"``              — raw color string
+      - an unwrapped int / str         — defensive fallback
+
+    Recursive: keep peeling until we hit a scalar. The recursion is
+    bounded — we only re-enter on shapes we've explicitly handled.
+
+    `seq_frame` is the position in the schedule we want to sample; for
+    shapes that don't have one (scalar, single value, color string) it
+    is ignored. `fallback` is returned when nothing useful could be
+    extracted; if `fallback` is None we return `schedule` itself.
+    """
+    if schedule is None:
+        return fallback
+    if isinstance(schedule, tuple):
+        return _resolve_property(schedule[0], seq_frame, fallback)
+    if isinstance(schedule, list):
+        if not schedule:
+            return fallback
+        if all(isinstance(d, dict) and "y" in d for d in schedule):
+            return _resolve_property(value_at(schedule, seq_frame), seq_frame, fallback)
+        # List-of-one (the (value, reset) tuple flattened).
+        return _resolve_property(schedule[0], seq_frame, fallback)
+    if isinstance(schedule, dict):
+        if "y" in schedule or "value" in schedule:
+            return schedule.get("y", schedule.get("value", fallback))
+        if "font_file" in schedule:
+            return schedule["font_file"]
+        # Unknown dict shape — try to surface something scalar; if
+        # none of the values is a scalar, fall back.
+        for v in schedule.values():
+            if isinstance(v, (str, int, float, bool)):
+                return v
+        return fallback
+    return schedule
 
 
 # --------------------------------------------------------------------------- #

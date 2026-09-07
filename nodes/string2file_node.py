@@ -1,6 +1,19 @@
+"""Save/Preview Text node.
+
+Writes a STRING to a .txt file under ComfyUI/output/ and renders it
+in the inline preview pane. List-mode is deliberately not enabled
+here — `string` and `filename_prefix` are scalar widgets, not batch
+inputs.
+"""
+from __future__ import annotations
+
 import os
 from pathlib import Path
+
 import folder_paths
+
+from ..helpers.logger import logger
+
 
 class string2file:
 
@@ -14,58 +27,59 @@ class string2file:
         return {
             "required": {
                 "filename_prefix": ("STRING", {"default": "text\\text"}),
-                "string": ("STRING", {"forceInput": True}),                
-            },            
+                "string": ("STRING", {"forceInput": True, "multiline": True}),
+            },
             "hidden": {
                 "unique_id": "UNIQUE_ID",
-                "extra_pnginfo": "EXTRA_PNGINFO"
-            }
-            
+                "extra_pnginfo": "EXTRA_PNGINFO",
+            },
         }
-    
-    INPUT_IS_LIST = True
+
+    # Not a list-input node — `string` arrives as a single STRING.
     CATEGORY = "💠 Mana Nodes"
     RETURN_TYPES = ()
     RETURN_NAMES = ()
     FUNCTION = "run"
     OUTPUT_NODE = True
 
-    def run(self, string, unique_id=None, extra_pnginfo=None, **kwargs):
-        full_path = self.construct_text_path(kwargs)
+    def run(self, string: str, filename_prefix: str = "text\\text",
+            unique_id=None, extra_pnginfo=None, **_):
+        full_path = self.construct_text_path(filename_prefix)
 
-        # Write the string to the file
         try:
-            with open(full_path, 'w', encoding='utf-8') as file:
-                file.write(string[0])
+            with open(full_path, "w", encoding="utf-8") as file:
+                file.write(string)
         except OSError as e:
             raise OSError(f"Failed to write {full_path}: {e}") from e
 
-        if unique_id and extra_pnginfo and "workflow" in extra_pnginfo[0]:
-            workflow = extra_pnginfo[0]["workflow"]
-            node = next((x for x in workflow["nodes"] if str(x["id"]) == unique_id[0]), None)
-            if node:
+        # Tag the workflow with the saved text so reloading the saved
+        # PNG/API payload shows what was written. extra_pnginfo is
+        # either a list [{workflow: ...}] or a bare dict depending on
+        # the ComfyUI version — handle both. unique_id is the same
+        # shape (list in some versions, scalar in others).
+        epi = extra_pnginfo[0] if isinstance(extra_pnginfo, list) else extra_pnginfo
+        uid = unique_id[0] if isinstance(unique_id, list) else unique_id
+        if uid and isinstance(epi, dict) and "workflow" in epi:
+            workflow = epi["workflow"]
+            node = next((x for x in workflow["nodes"] if str(x.get("id")) == str(uid)), None)
+            if node is not None:
                 node["widgets_values"] = [string]
 
-        return {"ui": {"text": string}, "result": (string,)}
-    
-    def construct_text_path(self, kwargs):
+        return {"ui": {"text": [string]}, "result": ()}
+
+    def construct_text_path(self, filename_prefix: str) -> str:
         base_directory = folder_paths.get_output_directory()
-        filename_prefix = os.path.normpath(kwargs['filename_prefix'][0])
-        full_path = os.path.join(base_directory, filename_prefix)
+        normalised_prefix = os.path.normpath(filename_prefix or "text\\text")
+        full_path = os.path.join(base_directory, normalised_prefix)
 
-        # Ensure the path ends with .mp4
-        if not full_path.endswith('.txt'):
-            full_path += '.txt'
+        if not full_path.endswith(".txt"):
+            full_path += ".txt"
 
-        # Increment filename if it already exists
         counter = 1
         while os.path.exists(full_path):
-            # Construct a new path with an incremented number
-            new_filename = f"{filename_prefix}_{counter}.txt"
+            new_filename = f"{normalised_prefix}_{counter}.txt"
             full_path = os.path.join(base_directory, new_filename)
             counter += 1
 
-        # Create the directory if it does not exist
         Path(os.path.dirname(full_path)).mkdir(parents=True, exist_ok=True)
-
         return full_path
