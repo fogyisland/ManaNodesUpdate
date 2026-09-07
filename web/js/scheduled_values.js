@@ -343,7 +343,7 @@ class TimelineWidget {
     
     generateInBetweenValues() {
         if (this.keyframes.length < 2) return; // Safety check
-        
+
         let easing_type_widget = this.widgets.find(w => w.name === "easing_type").value || "linear";
 
         // Clear any previously generated keyframes
@@ -444,12 +444,13 @@ class TimelineWidget {
         localStorage.setItem('savedGeneratedKeyframes_'+ this.id, JSON.stringify(this.generatedKeyframes));
 
         this.chart.update();
-    
+
         // Refresh the points display and buttons
         this.updatePointsDisplay();
         this.updateGenerateButtonState();
+        this.syncWidgetValue();
     }
-    
+
     deleteGeneratedValues() {
         this.generatedKeyframes = [];
             if (this.chart.data.datasets.length > 1) {
@@ -458,6 +459,23 @@ class TimelineWidget {
         }
         this.updateGenerateButtonState();
         this.updatePointsDisplay();
+        this.syncWidgetValue();
+    }
+
+    // Push the current keyframes + generated keyframes into the
+    // hidden scheduled_values widget so Python's run() can read them.
+    // Called only from user-action paths (addChartKeyframe /
+    // generateInBetweenValues / deleteGeneratedValues), NEVER from
+    // onDrawBackground — touching widget.value in the redraw path
+    // was causing the gray-overlay feedback loop the user reported.
+    syncWidgetValue() {
+        if (!this.widgets) return;
+        const w = this.widgets.find(w => w.name === "scheduled_values");
+        if (!w) return;
+        const combined = [...this.keyframes, ...this.generatedKeyframes]
+            .sort((a, b) => a.x - b.x);
+        const unique = Array.from(new Map(combined.map(kf => [kf.x, kf])).values());
+        w.value = JSON.stringify(unique);
     }
 
     removeChartKeyframe(index) {
@@ -465,10 +483,15 @@ class TimelineWidget {
         this.updateChartData();
         this.updatePointsDisplay();
         this.updateGenerateButtonState();
-        if(this.keyframes.length === 0){
-            this.chartContainer.removeChild(this.pointsDisplay);
-            this.deleteGeneratedValues()
+        if (this.keyframes.length === 0) {
+            if (this.pointsDisplay && this.pointsDisplay.parentNode) {
+                this.chartContainer.removeChild(this.pointsDisplay);
+            }
+            this.pointsDisplay = null;
+            this.deleteGeneratedValues();
         }
+        localStorage.setItem('savedKeyframes_' + this.id, JSON.stringify(this.keyframes));
+        this.syncWidgetValue();
     }
     updateChartData() {
         this.keyframes.sort((a, b) => a.x - b.x);
@@ -528,7 +551,7 @@ class TimelineWidget {
         }
     }    
     
-    addChartKeyframe(x, y) {    
+    addChartKeyframe(x, y) {
         const keyframeIndex = this.keyframes.findIndex(kf => kf.x === x);
         if (keyframeIndex > -1) {
             this.keyframes[keyframeIndex].y = y;
@@ -540,23 +563,24 @@ class TimelineWidget {
         this.chart.data.datasets[0].data = this.keyframes.map(kf => ({ x: kf.x, y: kf.y }));
         // Update chart without losing zoom state
         this.chart.update();
-        if(this.pointsDisplay != null ) {
+        if (this.pointsDisplay != null) {
             this.updatePointsDisplay();
-        }
-        else {
-            
+        } else {
             this.createPointsDisplay();
-            this.createGenerationButton(); 
+            this.createGenerationButton();
             this.updatePointsDisplay();
-
         }
-        if(!this.pointsDisplay.parentNode){
+        if (!this.pointsDisplay.parentNode) {
             this.chartContainer.appendChild(this.pointsDisplay);
         }
 
         this.updateGenerateButtonState();
         localStorage.setItem('savedKeyframes_' + this.id, JSON.stringify(this.keyframes));
 
+        // Sync the schedule back to the widget so Python's run() can
+        // read it. Do this on user interaction, NOT in onDrawBackground
+        // (which fires every frame and would trigger a redraw loop).
+        this.syncWidgetValue();
     }
 
     calculateValuesFromClick(event, canvas) {
@@ -727,28 +751,42 @@ app.registerExtension({
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (nodeData.name === "Scheduled Values") {
 
-            // BUGFIX: The old code generated a fresh random ID in
-            // onNodeCreated every time the workflow was loaded. That
-            // made savedKeyframes_<id> lookups fail silently, which is
-            // why "my keyframes disappear when I reopen the workflow".
-            // We now derive the ID from ComfyUI's own node id (stable
-            // per workflow position) so a saved workflow keeps its data.
+            // BUGFIX (gray-overlay feedback loop): the old version of
+            // this helper wrote `id_widget.value = generated` every time
+            // the workflow was loaded. Combined with the old
+            // onDrawBackground that also wrote this on every redraw,
+            // that turned the node into a self-modifying widget and
+            // ComfyUI marked it dirty every frame. Now we set the
+            // widget value exactly once in onNodeCreated and never
+            // again — the localStorage key is the stable id, and the
+            // widget just mirrors it for user inspection.
             const _getStableId = function (node) {
                 const id_widget = node.widgets.find(w => w.name === "id");
                 if (!id_widget) return null;
                 if (id_widget.value && id_widget.value !== 0) {
                     return id_widget.value;
                 }
-                // Fall back to the ComfyUI node id (string -> int) so
-                // two nodes on the same canvas get distinct ids.
                 let seed = 0;
                 const s = String(node.id || "");
                 for (let i = 0; i < s.length; i++) {
                     seed = (seed * 31 + s.charCodeAt(i)) | 0;
                 }
                 const generated = Math.abs(seed) || Math.floor(Math.random() * 1000000);
-                id_widget.value = generated;
                 return generated;
+            };
+
+            const _ensureIdWidgetWritten = function (node) {
+                // Write the id exactly once. Subsequent onDrawBackground
+                // callbacks MUST NOT touch this widget — the helper is
+                // only called from onNodeCreated.
+                const id_widget = node.widgets.find(w => w.name === "id");
+                if (!id_widget) return;
+                if (!id_widget.value || id_widget.value === 0) {
+                    const stableId = _getStableId(node);
+                    if (stableId !== null) {
+                        id_widget.value = stableId;
+                    }
+                }
             };
 
             chainCallback(nodeType.prototype, "onConfigure", function () {
@@ -801,12 +839,32 @@ app.registerExtension({
                 });
                 loadBootstrapCss();
                 this.timelineWidget = timelineWidget;
-                // Derive stable id from ComfyUI node id (not random per load).
-                this.timelineWidget.id = _getStableId(this);
+                // Derive stable id from ComfyUI node id (not random per
+                // load). Write the widget value exactly once here — never
+                // touch it again in onDrawBackground (see the gray-overlay
+                // bugfix in onDrawBackground for the reasoning).
+                _ensureIdWidgetWritten(this);
+                this.timelineWidget.id = this.widgets.find(w => w.name === "id").value;
 
             });
 
             chainCallback(nodeType.prototype, 'onDrawBackground', function () {
+                // BUGFIX (gray-overlay feedback loop): the old version
+                // of this callback wrote to `scheduled_values` widget
+                // value AND the `id` widget value on every redraw.
+                // ComfyUI treats widget.value mutations as dirty marks
+                // and triggers another redraw, so the loop ran ~30
+                // times/sec. While it ran, ComfyUI showed the node as
+                // 'still computing' with a gray overlay. Refreshing the
+                // page was the only way out.
+                //
+                // The fix: widget.value writes are now centralised in
+                // TimelineWidget.syncWidgetValue(), called only from
+                // user-action paths (addChartKeyframe /
+                // generateInBetweenValues / deleteGeneratedValues).
+                // This callback only updates chart visual state.
+                if (!this.timelineWidget) return;
+
                 const frame_count_widget = this.widgets.find(w => w.name === "frame_count");
                 const value_range_widget = this.widgets.find(w => w.name === "value_range");
 
@@ -816,33 +874,14 @@ app.registerExtension({
                 let stepSize = step_size_widget ? step_size_widget.value : "single";
 
                 if (this.prevMaxX !== maxX || this.prevValueRange !== valueRange) {
-                    if (this.timelineWidget) {
-                        this.timelineWidget.updateTicks(maxX, valueRange);
-                    }
+                    this.timelineWidget.updateTicks(maxX, valueRange);
                     this.prevMaxX = maxX;
                     this.prevValueRange = valueRange;
-                } 
+                }
 
                 if (this.stepSize !== stepSize) {
-                    if (this.timelineWidget) {
-                        this.timelineWidget.updateStepSize(stepSize);
-                    }
+                    this.timelineWidget.updateStepSize(stepSize);
                     this.stepSize = stepSize;
-                } 
-
-                if (this.timelineWidget) {
-                    this.widgets.find(w => w.name === "id").value = this.timelineWidget.id;
-                    // Combine keyframes and generatedKeyframes.
-                    let combinedKeyframes = [...this.timelineWidget.keyframes, ...this.timelineWidget.generatedKeyframes];
-                
-                    // Sort combined array based on 'x' to ensure order.
-                    combinedKeyframes.sort((a, b) => a.x - b.x);
-                
-                    // Remove duplicates.
-                    const uniqueKeyframes = Array.from(new Map(combinedKeyframes.map(kf => [kf.x, kf])).values());
-                
-                    // Set the value for the widget.
-                    this.widgets.find(w => w.name === "scheduled_values").value = JSON.stringify(uniqueKeyframes);
                 }
             });
         }
