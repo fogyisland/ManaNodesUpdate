@@ -8,6 +8,7 @@ from .nodes.canvas_settings_node import canvas_settings
 from .nodes.scheduled_values_node import scheduled_values
 from .nodes.color_animations_node import color_animations
 from .nodes.text_graphic_element_node import text_graphic_element
+from .nodes.schedule_combiner_node import schedule_combiner
 
 WEB_DIRECTORY = "./web"
 
@@ -21,7 +22,8 @@ NODE_CLASS_MAPPINGS = {
     "Canvas Properties": canvas_settings,
     "Font Properties": text_graphic_element,
     "Scheduled Values": scheduled_values,
-    "Preset Color Animations": color_animations
+    "Preset Color Animations": color_animations,
+    "Schedule Combiner": schedule_combiner,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -34,7 +36,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "Canvas Properties":"🖼️ Canvas Properties",
     "Font Properties":"🆗 Font Properties",
     "Scheduled Values":"⏰ Scheduled Values",
-    "Preset Color Animations":"🌈 Preset Color Animations"
+    "Preset Color Animations":"🌈 Preset Color Animations",
+    "Schedule Combiner":"🔀 Schedule Combiner",
 }
 
 # Search aliases let users find nodes by typing "mana" or "mana-nodes"
