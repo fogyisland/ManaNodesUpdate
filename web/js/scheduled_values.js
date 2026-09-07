@@ -505,32 +505,43 @@ class TimelineWidget {
     updateTicks(maxX, valueRange) {
         this.maxX = maxX;
         this.maxY = Math.abs(valueRange);
-        
-        if (this.chart) {
-            // Capture the current zoom state
-            const xScale = this.chart.scales['x'];
-            const yScale = this.chart.scales['y'];
-            const xMin = xScale.min;
-            const xMax = xScale.max;
-            const yMin = yScale.min;
-            const yMax = yScale.max;
-    
-            // Update the scales
-            this.chart.options.scales.x.max = maxX;
-            this.chart.options.scales.y.min = -this.maxY;
-            this.chart.options.scales.y.max = this.maxY;
-    
-            // Sort and update keyframes
-            this.keyframes.sort((a, b) => a.x - b.x);
-            this.chart.data.datasets[0].data = this.keyframes.map(kf => ({ x: kf.x, y: kf.y }));
-    
-            // Reapply the zoom state
-            xScale.min = xMin;
-            xScale.max = xMax;
-            yScale.min = yMin;
-            yScale.max = yMax;
 
-            this.chart.update();
+        // BUGFIX (workflow-load crash): when a workflow with a
+        // Scheduled Values node is loaded, onConfigure runs before
+        // Chart.js has finished its async initialisation, so
+        // this.chart may exist but its scales haven't been built
+        // yet (scales['x'] is undefined). Reading .min on undefined
+        // throws "Cannot read properties of undefined (reading 'min')"
+        // and the whole loadGraphData() call aborts. Guard every
+        // path that touches chart internals so partial init is OK.
+        if (!this.chart || !this.chart.scales || !this.chart.scales['x'] || !this.chart.scales['y']) {
+            return;
+        }
+
+        // Capture the current zoom state
+        const xScale = this.chart.scales['x'];
+        const yScale = this.chart.scales['y'];
+        const xMin = xScale.min;
+        const xMax = xScale.max;
+        const yMin = yScale.min;
+        const yMax = yScale.max;
+
+        // Update the scales
+        this.chart.options.scales.x.max = maxX;
+        this.chart.options.scales.y.min = -this.maxY;
+        this.chart.options.scales.y.max = this.maxY;
+
+        // Sort and update keyframes
+        this.keyframes.sort((a, b) => a.x - b.x);
+        this.chart.data.datasets[0].data = this.keyframes.map(kf => ({ x: kf.x, y: kf.y }));
+
+        // Reapply the zoom state
+        xScale.min = xMin;
+        xScale.max = xMax;
+        yScale.min = yMin;
+        yScale.max = yMax;
+
+        this.chart.update();
 
         }
     }
