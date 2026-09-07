@@ -1,3 +1,4 @@
+import os
 import re
 from functools import lru_cache
 
@@ -34,7 +35,35 @@ class font2img:
     # methods broke with `NameError: name 'font_manager' is not defined`.
 
     def get_font(self, font_name, font_size) -> ImageFont.FreeTypeFont:
-        font_file = self.FONTS[font_name]
+        # Defensive: `font_name` may arrive wrapped depending on how the
+        # upstream TEXT_GRAPHIC_ELEMENT was assembled. Accept all the
+        # shapes a downstream consumer has actually produced in the wild:
+        #   - str                     -> the bare font filename
+        #   - ["foo.ttf"]             -> single-element list/tuple
+        #   - ["foo.ttf", "word"]     -> (value, reset) tuple flattened
+        #   - {"font_file": "..."}    -> dict carrying the key we want
+        if isinstance(font_name, dict):
+            font_name = font_name.get("font_file", "")
+        if isinstance(font_name, (list, tuple)):
+            if not font_name:
+                raise ValueError("font_name list/tuple is empty")
+            font_name = font_name[0]
+            if isinstance(font_name, dict):
+                font_name = font_name.get("font_file", "")
+        if not isinstance(font_name, str) or not font_name:
+            raise ValueError(f"font_name must be a non-empty string, got {font_name!r}")
+        # Resolve the registered display name -> on-disk path. If the
+        # caller already gave us a path, accept it directly.
+        if font_name in self.FONTS:
+            font_file = self.FONTS[font_name]
+        elif os.path.isfile(font_name):
+            font_file = font_name
+        else:
+            raise ValueError(
+                f"Unknown font {font_name!r}. Make sure a Font Properties "
+                "node is connected to the `font` input, and that its "
+                "`font_file` dropdown selects a registered font."
+            )
         return get_font(font_file, font_size)
 
     @classmethod
