@@ -129,12 +129,16 @@ def ensure_ffmpeg(logger=None) -> str | None:
       2. System PATH (fastest, latest version)
       3. `imageio-ffmpeg` static binary (~30 MB, ships with no system
          dependency) — copied into app/ on first use
-      4. One-shot `pip install imageio-ffmpeg` if none of (1)-(3)
-         is available — then copied into app/ for future runs
 
-    Returns the path to a working ffmpeg binary, or None if all
-    attempts failed (in which case the caller should surface a clear
-    error to the user with the install instructions).
+    `imageio-ffmpeg` is declared in requirements.txt so pip installs
+    it when the custom_node is installed. If for some reason it's
+    missing, we log a clear error rather than pip-installing on
+    the fly (silent pip installs inside ComfyUI's embedded Python
+    behave unpredictably).
+
+    Returns the path to a working ffmpeg binary, or None if no
+    source is available (in which case the caller surfaces the
+    error to the user).
 
     Notes:
       - openai-whisper itself only needs ffmpeg when transcribe() is
@@ -166,34 +170,25 @@ def ensure_ffmpeg(logger=None) -> str | None:
         ensure_ffmpeg._path = found
         return found
 
-    # 3 / 4. imageio-ffmpeg (install if missing, then copy into app/).
+    # 3. imageio-ffmpeg static binary. Required by requirements.txt;
+    #    if it's missing the user bypassed the normal install flow.
     try:
         import imageio_ffmpeg
     except ImportError:
-        try:
-            pip_prefix = (
-                [sys.executable, "-s", "-m", "pip", "install"]
-                if "python_embedded" in sys.executable
-                else [sys.executable, "-m", "pip", "install"]
+        if logger is not None:
+            logger().error(
+                "ffmpeg not found on PATH and imageio-ffmpeg is not "
+                "installed. This package is declared in "
+                "requirements.txt and should install automatically.\n"
+                "Manual fix: pip install imageio-ffmpeg\n"
+                "Or install a system ffmpeg:\n"
+                "  Windows: choco install ffmpeg\n"
+                "  macOS:   brew install ffmpeg\n"
+                "  Linux:   sudo apt install ffmpeg\n"
+                "Whisper can still transcribe WAV files via librosa, "
+                "but mp3 / m4a / aac input will fail without ffmpeg."
             )
-            subprocess.check_call(pip_prefix + ["imageio-ffmpeg"])
-            import imageio_ffmpeg
-        except Exception as exc:
-            if logger is not None:
-                logger().error(
-                    "ffmpeg is not installed and pip install imageio-ffmpeg "
-                    "failed: %s\n"
-                    "Manual install options:\n"
-                    "  Windows: choco install ffmpeg  (or download from "
-                    "https://www.gyan.dev/ffmpeg/builds/ and add to PATH)\n"
-                    "  macOS:   brew install ffmpeg\n"
-                    "  Linux:   sudo apt install ffmpeg  (or your distro's "
-                    "equivalent)\n"
-                    "Whisper can still transcribe WAV files via librosa, "
-                    "but mp3 / m4a / aac input will fail without ffmpeg.",
-                    exc,
-                )
-            return None
+        return None
 
     src = imageio_ffmpeg.get_ffmpeg_exe()
     if not src or not os.path.isfile(src):
@@ -209,8 +204,6 @@ def ensure_ffmpeg(logger=None) -> str | None:
     # it without re-downloading or depending on the venv.
     try:
         os.makedirs(os.path.dirname(local), exist_ok=True)
-        # shutil.copy preserves permissions; on Windows the source
-        # already has +x set so the copy inherits it.
         shutil.copy(src, local)
         if logger is not None:
             logger().info(
