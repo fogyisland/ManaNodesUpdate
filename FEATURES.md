@@ -201,12 +201,19 @@ of the same model size only pay the inference cost.
 
 WAV / FLAC input needs no extra setup — librosa uses soundfile
 internally. For mp3 / m4a / aac / ogg input, librosa needs an
-`ffmpeg` binary on PATH. The node calls
-`helpers.utils.ensure_ffmpeg()` on first run; if no system ffmpeg
-is found it falls back to the static binary shipped by
-`imageio-ffmpeg` (auto-installed via pip if missing). On Linux /
-macOS without ffmpeg pre-installed you can also run
-`apt install ffmpeg` / `brew install ffmpeg` manually.
+`ffmpeg` binary. The node calls `helpers.utils.ensure_ffmpeg()`
+on first run; resolution order is:
+
+  1. `<ComfyUI-Mana-Nodes>/app/ffmpeg(.exe)` — if the user already
+     placed one there, or a previous run copied one in
+  2. System PATH (`apt install ffmpeg` / `brew install ffmpeg` /
+     `choco install ffmpeg`)
+  3. `imageio-ffmpeg` (auto-installed via pip if missing), copied
+     into `app/ffmpeg(.exe)` for future runs
+
+The copied binary in `app/` ships-and-unships with the
+custom_node directory, so uninstalling Mana Nodes also drops the
+~80 MB ffmpeg.exe.
 
 ---
 

@@ -101,20 +101,40 @@ def stack_audio_tensors(tensors: Iterable[torch.Tensor], mode: str = "pad") -> t
 # --------------------------------------------------------------------------- #
 # ffmpeg self-install                                                          #
 # --------------------------------------------------------------------------- #
+def _local_ffmpeg_path() -> str:
+    """Where we keep a copy of the ffmpeg binary inside this package.
+
+    Lives at `<ComfyUI-Mana-Nodes>/app/ffmpeg(.exe)`. Copying here
+    instead of using imageio-ffmpeg's pip site-packages location
+    means the binary goes away when the user removes the
+    custom_nodes directory — no orphan file left behind in the
+    Python venv.
+    """
+    pkg_root = os.path.abspath(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), ".."
+    ))
+    app_dir = os.path.join(pkg_root, "app")
+    exe_name = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+    return os.path.join(app_dir, exe_name)
+
+
 def ensure_ffmpeg(logger=None) -> str | None:
     """Make sure an `ffmpeg` binary is reachable. Returns the resolved path.
 
     Resolution order:
 
-      1. System PATH (fastest, latest version)
-      2. `imageio-ffmpeg` (pip-installable static binary, ~30 MB,
-         ships with no system dependency, works on a clean machine)
-      3. One-shot `pip install imageio-ffmpeg` if neither (1) nor (2)
-         is available
+      1. `<ComfyUI-Mana-Nodes>/app/ffmpeg(.exe)` (copied here on first
+         run from imageio-ffmpeg so it ships-and-unships with the
+         custom_node directory)
+      2. System PATH (fastest, latest version)
+      3. `imageio-ffmpeg` static binary (~30 MB, ships with no system
+         dependency) — copied into app/ on first use
+      4. One-shot `pip install imageio-ffmpeg` if none of (1)-(3)
+         is available — then copied into app/ for future runs
 
-    Returns the path to a working ffmpeg binary, or None if all three
+    Returns the path to a working ffmpeg binary, or None if all
     attempts failed (in which case the caller should surface a clear
-    error to the user with the install instructions below).
+    error to the user with the install instructions).
 
     Notes:
       - openai-whisper itself only needs ffmpeg when transcribe() is
@@ -130,77 +150,100 @@ def ensure_ffmpeg(logger=None) -> str | None:
 
     import shutil
 
-    # 1. System PATH.
+    local = _local_ffmpeg_path()
+
+    # 1. Already copied into the package's app/ directory.
+    if os.path.isfile(local):
+        ensure_ffmpeg._resolved = True
+        ensure_ffmpeg._path = local
+        _add_to_path(os.path.dirname(local))
+        return local
+
+    # 2. System ffmpeg on PATH.
     found = shutil.which("ffmpeg")
     if found:
         ensure_ffmpeg._resolved = True
         ensure_ffmpeg._path = found
         return found
 
-    # 2. imageio-ffmpeg static binary (preferred fallback).
+    # 3 / 4. imageio-ffmpeg (install if missing, then copy into app/).
     try:
-        import imageio_ffmpeg  # noqa: F401
-        path = imageio_ffmpeg.get_ffmpeg_exe()
-        if path and os.path.isfile(path):
-            # Put it on PATH for the duration of this process so any
-            # subprocess call (librosa / audioread / user code) finds
-            # the same binary we resolved here.
-            bin_dir = os.path.dirname(path)
-            current = os.environ.get("PATH", "")
-            if bin_dir not in current.split(os.pathsep):
-                os.environ["PATH"] = bin_dir + os.pathsep + current
-            if logger is not None:
-                logger().info(
-                    "ffmpeg not found on PATH; using imageio-ffmpeg "
-                    "static binary at %s", path,
-                )
-            ensure_ffmpeg._resolved = True
-            ensure_ffmpeg._path = path
-            return path
+        import imageio_ffmpeg
     except ImportError:
-        pass
+        try:
+            pip_prefix = (
+                [sys.executable, "-s", "-m", "pip", "install"]
+                if "python_embedded" in sys.executable
+                else [sys.executable, "-m", "pip", "install"]
+            )
+            subprocess.check_call(pip_prefix + ["imageio-ffmpeg"])
+            import imageio_ffmpeg
+        except Exception as exc:
+            if logger is not None:
+                logger().error(
+                    "ffmpeg is not installed and pip install imageio-ffmpeg "
+                    "failed: %s\n"
+                    "Manual install options:\n"
+                    "  Windows: choco install ffmpeg  (or download from "
+                    "https://www.gyan.dev/ffmpeg/builds/ and add to PATH)\n"
+                    "  macOS:   brew install ffmpeg\n"
+                    "  Linux:   sudo apt install ffmpeg  (or your distro's "
+                    "equivalent)\n"
+                    "Whisper can still transcribe WAV files via librosa, "
+                    "but mp3 / m4a / aac input will fail without ffmpeg.",
+                    exc,
+                )
+            return None
 
-    # 3. One-shot pip install of imageio-ffmpeg. Same playbook as
-    # ensure_opencv: idempotent, surfaces clear error if it fails.
-    pip_prefix = (
-        [sys.executable, "-s", "-m", "pip", "install"]
-        if "python_embedded" in sys.executable
-        else [sys.executable, "-m", "pip", "install"]
-    )
-    try:
-        subprocess.check_call(pip_prefix + ["imageio-ffmpeg"])
-    except Exception as exc:
+    src = imageio_ffmpeg.get_ffmpeg_exe()
+    if not src or not os.path.isfile(src):
         if logger is not None:
             logger().error(
-                "ffmpeg is not installed and pip install imageio-ffmpeg "
-                "failed: %s\n"
-                "Manual install options:\n"
-                "  Windows: choco install ffmpeg  (or download from "
-                "https://www.gyan.dev/ffmpeg/builds/ and add to PATH)\n"
-                "  macOS:   brew install ffmpeg\n"
-                "  Linux:   sudo apt install ffmpeg  (or your distro's "
-                "equivalent)\n"
-                "Whisper can still transcribe WAV files via librosa, "
-                "but mp3 / m4a / aac input will fail without ffmpeg.",
-                exc,
+                "imageio-ffmpeg is installed but get_ffmpeg_exe() "
+                "returned no usable path: %r", src,
             )
         return None
 
+    # Copy the static binary into the package's app/ directory so
+    # future runs (and future re-installs of the custom_node) find
+    # it without re-downloading or depending on the venv.
     try:
-        import imageio_ffmpeg
-        path = imageio_ffmpeg.get_ffmpeg_exe()
-        if path and os.path.isfile(path):
-            bin_dir = os.path.dirname(path)
-            current = os.environ.get("PATH", "")
-            if bin_dir not in current.split(os.pathsep):
-                os.environ["PATH"] = bin_dir + os.pathsep + current
-            ensure_ffmpeg._resolved = True
-            ensure_ffmpeg._path = path
-            return path
-    except Exception:
-        pass
+        os.makedirs(os.path.dirname(local), exist_ok=True)
+        # shutil.copy preserves permissions; on Windows the source
+        # already has +x set so the copy inherits it.
+        shutil.copy(src, local)
+        if logger is not None:
+            logger().info(
+                "Copied ffmpeg static binary from %s to %s (%.1f MB). "
+                "It will be removed when you uninstall the Mana "
+                "Nodes custom_node directory.",
+                src, local, os.path.getsize(local) / (1024 * 1024),
+            )
+    except (OSError, PermissionError) as exc:
+        # Couldn't copy (read-only install, permission, etc.) — fall
+        # back to the imageio-ffmpeg source location for this session.
+        if logger is not None:
+            logger().warning(
+                "Could not copy ffmpeg into app/ (%s); using imageio-ffmpeg "
+                "source location %s for this session.", exc, src,
+            )
+        ensure_ffmpeg._resolved = True
+        ensure_ffmpeg._path = src
+        _add_to_path(os.path.dirname(src))
+        return src
 
-    return None
+    ensure_ffmpeg._resolved = True
+    ensure_ffmpeg._path = local
+    _add_to_path(os.path.dirname(local))
+    return local
+
+
+def _add_to_path(directory: str) -> None:
+    """Prepend `directory` to PATH so subprocess calls find the binary."""
+    current = os.environ.get("PATH", "")
+    parts = current.split(os.pathsep)
+    if directory not in parts:
+        os.environ["PATH"] = directory + os.pathsep + current
 
 
 # Backwards-compat alias used by speech2text_node.

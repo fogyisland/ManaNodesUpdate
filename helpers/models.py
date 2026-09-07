@@ -5,7 +5,8 @@ cached. We deliberately put these under `<ComfyUI>/models/Mana/`
 rather than the default HuggingFace cache (~/.cache/huggingface) so
 the user can:
 
-  - See what models are installed
+  - See what models are installed (visible in ComfyUI's Models sidebar
+    because we register the parent path via folder_paths below)
   - Pre-download weights manually (no internet on the box, slow
     link, or just want to control versions)
   - Back up the directory alongside other ComfyUI model files
@@ -20,13 +21,11 @@ manage them independently. For example:
   - models/Mana/TextToSpeech/                <- Bark weights
   - models/Mana/OCR/                         <- future
 
-The `get_feature_models_dir(name)` helper creates the subdir on
-demand. HuggingFace's `from_pretrained(cache_dir=...)` will then
-place the standard `models--<org>--<name>/snapshots/<hash>/...`
-structure inside that subdir.
-
 The path is read from ComfyUI's folder_paths module so it works
 regardless of where the user installed ComfyUI.
+
+Override with the env var `MANA_MODELS_DIR=/some/other/path` to put
+weights anywhere you like (e.g. a fast SSD).
 """
 from __future__ import annotations
 
@@ -36,6 +35,9 @@ import os
 # Import lazily so this helper can be reused by tests that don't
 # have ComfyUI installed.
 def _get_models_root() -> str:
+    override = os.environ.get("MANA_MODELS_DIR")
+    if override:
+        return override
     try:
         import folder_paths  # type: ignore
         roots = folder_paths.get_folder_paths("models")
