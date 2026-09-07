@@ -12,6 +12,7 @@ _ANIMATABLE_PROPS = (
     "shadow_offset_x", "shadow_offset_y",
     "font_size", "x_offset", "y_offset", "rotation",
     "rotation_anchor_x", "rotation_anchor_y",
+    "font_color", "border_color", "shadow_color",
 )
 
 

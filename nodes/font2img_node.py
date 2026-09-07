@@ -130,11 +130,32 @@ class font2img:
         transcription = kwargs.get('transcription', None)
         text = kwargs.get('text')
 
+        # TEMP DEBUG: surface exactly what shape text arrived in so we
+        # can tell whether the empty-warning is the upstream value
+        # being None / '' or a parse problem later.
+        from ..helpers.logger import logger as _dbg_logger
+        _dbg_logger().info(
+            "[DEBUG font2img.run] kwargs keys=%s text type=%s text repr=%r "
+            "transcription type=%s",
+            sorted(kwargs.keys()),
+            type(text).__name__,
+            text,
+            type(transcription).__name__,
+        )
+
         if transcription != None:
             formatted_transcription = self.format_transcription(kwargs)
             text = formatted_transcription
         else:
             formatted_transcription = text
+
+        # Reset the empty-text dedupe flag whenever we actually got
+        # non-empty text. This way a user who starts with empty text,
+        # then types something, sees the warning go away AND a fresh
+        # warning if they delete the text again.
+        if text and text.strip():
+            self._empty_text_warned = False
+            self._empty_text_warned_key = None
 
         # Defensive: tell the user *why* they're getting blank frames.
         # Without this, the silent failure (black video) is hard to
@@ -142,14 +163,11 @@ class font2img:
         #   - Speech Recognition produced no text (audio silent /
         #     wrong model for the language / audio too short)
         #   - User typed "{}" as text but didn't connect transcription
-        # Warn at most once per run — not per frame, not per re-render
-        # of the same workflow. A user iterating on a workflow with
-        # empty text shouldn't be spammed.
         if not text or not text.strip():
             from ..helpers.logger import logger
             warn_key = (transcription is not None,)
             if not getattr(self, "_empty_text_warned", False) or (
-                self._empty_text_warned_key != warn_key
+                getattr(self, "_empty_text_warned_key", None) != warn_key
             ):
                 self._empty_text_warned = True
                 self._empty_text_warned_key = warn_key
@@ -449,6 +467,24 @@ class font2img:
 
             image_index = min(i - 1, len(prepared_images) - 1)
             selected_image = prepared_images[image_index]
+
+            # TEMP DEBUG: log what we're about to render for the first
+            # frame so we can diagnose the 'output is black' complaint.
+            # Only frame 1 — later frames spam the log.
+            if i == 1:
+                from ..helpers.logger import logger as _dbg_logger
+                _dbg_logger().info(
+                    "[DEBUG font2img.frame1] text=%r font_color=%r "
+                    "border_color=%r shadow_color=%r background_color=%r "
+                    "selected_image size=%s mode=%s",
+                    text,
+                    current_font_color,
+                    current_border_color,
+                    current_shadow_color,
+                    kwargs.get('canvas', {}).get('background_color'),
+                    selected_image.size if hasattr(selected_image, 'size') else '?',
+                    selected_image.mode if hasattr(selected_image, 'mode') else '?',
+                )
 
             draw = ImageDraw.Draw(selected_image)
             text_block_width, text_block_height = self.calculate_text_block_size(draw, text, font, tagged_font, kwargs)
@@ -830,10 +866,17 @@ def _resolve_property(schedule, seq_frame: int, fallback=None):
     if isinstance(schedule, list):
         if not schedule:
             return fallback
+        # Distinguish schedule (list of {x, y} dicts) from a raw
+        # colour value (list of [r, g, b] ints, or a single-element
+        # flattened tuple). The old heuristic — "treat any non-empty
+        # list as a schedule" — swallowed [r, g, b] arrays and
+        # recursively peeled them down to the first int, which broke
+        # font_color animation through Preset Color Animations.
         if all(isinstance(d, dict) and "y" in d for d in schedule):
             return _resolve_property(value_at(schedule, seq_frame), seq_frame, fallback)
-        # List-of-one (the (value, reset) tuple flattened).
-        return _resolve_property(schedule[0], seq_frame, fallback)
+        # Looks like a colour value (e.g. [255, 0, 0]) — return as-is.
+        # PIL's ImageDraw.text accepts a 3-tuple / list for `fill=`.
+        return schedule
     if isinstance(schedule, dict):
         if "y" in schedule or "value" in schedule:
             return schedule.get("y", schedule.get("value", fallback))
