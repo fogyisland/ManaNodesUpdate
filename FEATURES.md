@@ -199,8 +199,14 @@ of the same model size only pay the inference cost.
 
 ### Requirements
 
-`ffmpeg` must be installed on the host (apt / brew / choco
-install ffmpeg). openai-whisper shells out to ffmpeg for decoding.
+WAV / FLAC input needs no extra setup — librosa uses soundfile
+internally. For mp3 / m4a / aac / ogg input, librosa needs an
+`ffmpeg` binary on PATH. The node calls
+`helpers.utils.ensure_ffmpeg()` on first run; if no system ffmpeg
+is found it falls back to the static binary shipped by
+`imageio-ffmpeg` (auto-installed via pip if missing). On Linux /
+macOS without ffmpeg pre-installed you can also run
+`apt install ffmpeg` / `brew install ffmpeg` manually.
 
 ---
 

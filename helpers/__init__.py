@@ -19,7 +19,13 @@ from .models import (
     list_cached_models,
     report as report_models,
 )
-from .utils import ensure_opencv, pil2tensor, stack_audio_tensors, tensor2pil
+from .utils import (
+    ensure_ffmpeg,
+    ensure_opencv,
+    pil2tensor,
+    stack_audio_tensors,
+    tensor2pil,
+)
 
 __all__ = [
     # animation
@@ -42,6 +48,7 @@ __all__ = [
     "list_cached_models",
     "report_models",
     # utils
+    "ensure_ffmpeg",
     "ensure_opencv",
     "pil2tensor",
     "stack_audio_tensors",

@@ -29,9 +29,15 @@ moviepy>=1.0.3,<3.0
 # Speech-to-text (Whisper). We swapped wav2vec2 for openai-whisper
 # because Whisper handles noisy audio / songs far better and outputs
 # word-level timestamps natively (no manual grouping). openai-whisper
-# pulls in tiktoken + ffmpeg-python as transitive deps; ffmpeg itself
-# must be installed on the host (apt/brew/choco install ffmpeg).
+# pulls in tiktoken + ffmpeg-python as transitive deps.
 openai-whisper>=20231117
+
+# Optional: static ffmpeg binary shipped via pip. Only needed when
+# the host has no system ffmpeg AND the user feeds compressed audio
+# (mp3 / m4a / aac) that librosa can't decode without ffmpeg. WAV
+# files don't need this. helpers.utils.ensure_ffmpeg() will pip
+# install it on first use if missing.
+imageio-ffmpeg>=0.4.9
 
 # Audio decoding for Whisper.
 librosa>=0.10

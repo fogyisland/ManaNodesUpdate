@@ -80,6 +80,16 @@ def _load_whisper(model_size: str):
     """
     from ..helpers.models import get_feature_models_dir
     from ..helpers.logger import logger
+    from ..helpers.utils import ensure_ffmpeg
+
+    # Resolve ffmpeg before anything else. openai-whisper only needs
+    # ffmpeg when audio is passed as a file path (we already feed
+    # numpy, so model.transcribe() doesn't shell out), but librosa's
+    # compressed-format decoder (mp3/m4a/aac) does call ffmpeg
+    # internally via audioread. If the host has no system ffmpeg,
+    # fall back to the static binary that ships with `imageio-ffmpeg`
+    # so the node works out-of-the-box on a clean pip install.
+    ensure_ffmpeg(logger)
 
     bare = model_size.removeprefix("whisper-") if model_size.startswith("whisper-") else model_size
     cache_dir = get_feature_models_dir("SpeechRecognition")
