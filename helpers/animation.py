@@ -91,12 +91,50 @@ def sequence_frame(current_frame: int, start_frame: int, duration: int, reset_mo
 
 
 def value_at(schedule: Iterable[dict], sequence_frame_number: int, default=None):
-    """Look up the value at a given sequence frame, or the most-recent prior one."""
+    """Look up the value at a given sequence frame.
+
+    Hold-style interpolation: returns the value of the most recent
+    prior keyframe, or the first keyframe's value if the requested
+    frame is before all keyframes, or the last keyframe's value if
+    the requested frame is past every keyframe. This matches the
+    behavior the JS frontend uses in `scheduled_values.js`
+    `generateInBetweenValues` after the user has already expanded
+    the schedule by clicking 'Generate Values'.
+
+    Note: we deliberately do NOT linearly interpolate here. The JS
+    side already pre-interpolates the schedule on the chart; if the
+    Python side also interpolated, the easing applied by the user
+    would be applied twice (once in JS, once in Python). Hold is
+    also what `parse_scheduled_string` callers rely on for the
+    most-recent-prior semantics that reset modes like `word` /
+    `line` depend on.
+
+    Returns `default` when the schedule is empty.
+    """
     items = list(schedule) if not isinstance(schedule, list) else schedule
     if not items:
         return default
-    by_x = {item["x"]: item["y"] for item in items}
-    if sequence_frame_number in by_x:
-        return by_x[sequence_frame_number]
-    prior = max((x for x in by_x if x <= sequence_frame_number), default=1)
-    return by_x.get(prior, items[0]["y"])
+    items.sort(key=lambda d: d.get("x", 0))
+
+    # Frame is at or past the last keyframe: hold the last value.
+    last_x = items[-1].get("x", 0)
+    if sequence_frame_number >= last_x:
+        return items[-1].get("y", default)
+
+    # Frame is at the first keyframe.
+    first_x = items[0].get("x", 0)
+    if sequence_frame_number <= first_x:
+        return items[0].get("y", default)
+
+    # Frame is between two keyframes: find the latest prior keyframe
+    # by scanning in order (the list is already sorted by x above).
+    for i in range(len(items) - 1):
+        cur_x = items[i].get("x", 0)
+        nxt_x = items[i + 1].get("x", 0)
+        if cur_x <= sequence_frame_number < nxt_x:
+            return items[i].get("y", default)
+
+    # Unreachable: the schedule covers [first_x, last_x] and we
+    # handled both endpoints. If we got here, fall back to the
+    # last item's value rather than crashing.
+    return items[-1].get("y", default)
