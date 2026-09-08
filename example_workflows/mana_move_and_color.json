@@ -1,0 +1,344 @@
+{
+  "last_node_id": 6,
+  "last_link_id": 5,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "Scheduled Values",
+      "pos": [
+        100,
+        100
+      ],
+      "size": [
+        320,
+        380
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "outputs": [
+        {
+          "name": "scheduled_values",
+          "type": "INT",
+          "links": [
+            1
+          ],
+          "shape": 3,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "Scheduled Values"
+      },
+      "widgets_values": [
+        30,
+        100,
+        "linear",
+        "single",
+        "word",
+        0,
+        "[{\"x\":1,\"y\":0},{\"x\":2,\"y\":3},{\"x\":3,\"y\":7},{\"x\":4,\"y\":10},{\"x\":5,\"y\":14},{\"x\":6,\"y\":17},{\"x\":7,\"y\":21},{\"x\":8,\"y\":24},{\"x\":9,\"y\":28},{\"x\":10,\"y\":31},{\"x\":11,\"y\":34},{\"x\":12,\"y\":38},{\"x\":13,\"y\":41},{\"x\":14,\"y\":45},{\"x\":15,\"y\":48},{\"x\":16,\"y\":52},{\"x\":17,\"y\":55},{\"x\":18,\"y\":59},{\"x\":19,\"y\":62},{\"x\":20,\"y\":66},{\"x\":21,\"y\":69},{\"x\":22,\"y\":72},{\"x\":23,\"y\":76},{\"x\":24,\"y\":79},{\"x\":25,\"y\":83},{\"x\":26,\"y\":86},{\"x\":27,\"y\":90},{\"x\":28,\"y\":93},{\"x\":29,\"y\":97},{\"x\":30,\"y\":100}]$word"
+      ]
+    },
+    {
+      "id": 2,
+      "type": "Preset Color Animations",
+      "pos": [
+        100,
+        540
+      ],
+      "size": [
+        270,
+        130
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "outputs": [
+        {
+          "name": "scheduled_colors",
+          "type": "STRING",
+          "links": [
+            2
+          ],
+          "shape": 3,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "Preset Color Animations"
+      },
+      "widgets_values": [
+        "rainbow",
+        30,
+        "word"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "Schedule Combiner",
+      "pos": [
+        560,
+        100
+      ],
+      "size": [
+        320,
+        280
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "x_offset",
+          "type": "STRING",
+          "link": 1,
+          "widget": {
+            "name": "x_offset"
+          }
+        },
+        {
+          "name": "font_color",
+          "type": "STRING",
+          "link": 2,
+          "widget": {
+            "name": "font_color"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "scheduled_values",
+          "type": "STRING",
+          "links": [
+            3
+          ],
+          "shape": 3,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "Schedule Combiner"
+      },
+      "widgets_values": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ]
+    },
+    {
+      "id": 4,
+      "type": "Font Properties",
+      "pos": [
+        1000,
+        100
+      ],
+      "size": [
+        320,
+        280
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "scheduled_values",
+          "type": "STRING",
+          "link": 3,
+          "widget": {
+            "name": "scheduled_values"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "font",
+          "type": "TEXT_GRAPHIC_ELEMENT",
+          "links": [
+            4
+          ],
+          "shape": 3,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "Font Properties"
+      },
+      "widgets_values": [
+        "Arial",
+        75,
+        "white",
+        0,
+        0,
+        "grey",
+        "grey",
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": 5,
+      "type": "Canvas Properties",
+      "pos": [
+        1000,
+        440
+      ],
+      "size": [
+        320,
+        280
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "outputs": [
+        {
+          "name": "canvas",
+          "type": "CANVAS_SETTINGS",
+          "links": [
+            5
+          ],
+          "shape": 3,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "Canvas Properties"
+      },
+      "widgets_values": [
+        512,
+        512,
+        "black",
+        "center center",
+        0,
+        5,
+        null
+      ]
+    },
+    {
+      "id": 6,
+      "type": "Text to Image Generator",
+      "pos": [
+        1400,
+        240
+      ],
+      "size": [
+        420,
+        200
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "font",
+          "type": "TEXT_GRAPHIC_ELEMENT",
+          "link": 4,
+          "widget": {
+            "name": "font"
+          }
+        },
+        {
+          "name": "canvas",
+          "type": "CANVAS_SETTINGS",
+          "link": 5,
+          "widget": {
+            "name": "canvas"
+          }
+        },
+        {
+          "name": "transcription",
+          "type": "TRANSCRIPTION",
+          "link": null
+        },
+        {
+          "name": "highlight_font",
+          "type": "TEXT_GRAPHIC_ELEMENT",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": [],
+          "shape": 3
+        },
+        {
+          "name": "framestamps_string",
+          "type": "STRING",
+          "links": [],
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "Text to Image Generator"
+      },
+      "widgets_values": [
+        "HELLO",
+        30,
+        0
+      ]
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      3,
+      0,
+      "STRING"
+    ],
+    [
+      2,
+      2,
+      0,
+      3,
+      10,
+      "STRING"
+    ],
+    [
+      3,
+      3,
+      0,
+      4,
+      0,
+      "STRING"
+    ],
+    [
+      4,
+      4,
+      0,
+      6,
+      0,
+      "TEXT_GRAPHIC_ELEMENT"
+    ],
+    [
+      5,
+      5,
+      0,
+      6,
+      1,
+      "CANVAS_SETTINGS"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {},
+  "version": 0.4
+}
