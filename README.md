@@ -48,7 +48,7 @@
 
 ---
 
-## 📦 节点清单（共 10 个）
+## 📦 节点清单（共 11 个）
 
 | 节点 | 类名 | 用途 |
 |------|------|------|
@@ -56,6 +56,7 @@
 | 🆗 **字体属性** | `Font Properties` | 字体、字号、颜色、描边、阴影、旋转、偏移。全部可动画。 |
 | 🖼️ **画布属性** | `Canvas Properties` | 输出尺寸、背景颜色/图片、内边距、对齐。 |
 | ⏰ **调度值** | `Scheduled Values` | 交互式关键帧图表，驱动任意字体属性随时间变化。 |
+| 🔀 **调度值合并器** | `Schedule Combiner` | 把多个 `scheduled_values` 输入合并成一个 dict 形式 schedule，按属性名驱动字体动画。 |
 | 🌈 **预设颜色动画** | `Preset Color Animations` | 循环播放 rainbow/sunset/sky/ocean 等调色板。 |
 | 🎤 **语音识别** | `Speech Recognition` | Whisper 转录 -> 字幕时间线（99 种语言自动检测）。 |
 | 📣 **生成音频** | `Generate Audio` | Bark 文字转语音。 |
@@ -138,6 +139,30 @@ pip install -r requirements.txt
 [text: "RAINBOW"]   -> text
 [frame_count: 60]   -> frame_count
 ```
+
+### 🎯 多属性同时动画(文字移动 + 变色 + 旋转)
+
+ComfyUI 的 widget 单输入限制让一个 Font Properties 的 `scheduled_values`
+只能接一根线 —— 想同时驱动 `x_offset` 和 `font_color` 就需要一个中间节点。
+**Schedule Combiner** 就是这个中间节点:接收 N 个 `scheduled_values` 输入,
+合并成 dict 形式,精确驱动每个属性。
+
+```
+[Scheduled Values: x_offset 0→200]   ──┐
+[Scheduled Values: y_offset 0→100]   ──┤
+[Preset Color Animations: rainbow]   ──┼─→ [Schedule Combiner]
+[Scheduled Values: rotation 0→360]   ──┘            │
+                                                   ↓ dict schedule
+                                            [Font Properties]
+                                                   │
+[Canvas Properties] → canvas ──────────────→ [Text to Image Gen]
+[text: "HELLO", frame_count: 60]                  text
+```
+
+`Schedule Combiner` 有 13 个 optional 输入(x_offset / y_offset / font_size
+/ rotation / font_color / border_color / shadow_color 等),每个都可以接
+Scheduled Values 或 Preset Color Animations。**没接的输入留空就行,combiner
+自动跳过**。
 
 ### 🎬 完整视频字幕流水线
 
@@ -262,16 +287,34 @@ ComfyUI-Mana-Nodes/
 │   ├── font_loader.py         # 字体发现 + LRU 缓存
 │   ├── logger.py              # 真日志
 │   └── utils.py               # 张量/音频工具
-├── nodes/                     # 10 个节点实现
+├── nodes/                     # 11 个节点实现
 ├── web/
 │   └── js/                    # 4 个前端扩展
 ├── font_files/                # 11 个示例字体
-└── example_workflows/         # 2 个开箱即用工作流
+└── example_workflows/         # 5 个开箱即用工作流（含 Schedule Combiner 复合动画）
 ```
 
 ---
 
 ## 📜 更新日志 (CHANGELOG)
+
+### v2.1.0（2026-09-08）
+
+**Schedule Combiner 节点 + 动画完整化**。
+新增 `Schedule Combiner` 让多个 `scheduled_values` 同时驱动不同字体属性,
+配合 Speech Recognition 完整流水线,支持 30+ 个并发动画场景。
+
+| 提交 | 关键内容 |
+|------|----------|
+| `fe95a33` | **新增** 🔀 `Schedule Combiner` 节点：把多个 scheduled_values 输入合并成 dict 形式 schedule,按属性名精确驱动 |
+| `16b134f` | 修 `Scheduled Values` 加载工作流时的崩溃（`updateTicks` 在 Chart.js scales 未就绪时早退） |
+| `ad520cf` | 5 个示例工作流全部用**稠密逐帧 keyframes**(避免 `value_at` hold-style 中间帧不显示) |
+| `838532c` | 修 `mana_slow_diagonal_bl_tr`:x/y_offset 缩到 430,HELLO 不再飞出 768x768 画布 |
+| `cd59757` | 修 `word$word` reset_mode 重复 + 删除所有 DEBUG 打印(彩虹字真正工作了) |
+| `0ddf48b` | 颜色 schedule 只 broadcast 到颜色字段,不再污染 `x_offset` |
+| `59c3233` | `font_color` / `border_color` / `shadow_color` 加入 `_ANIMATABLE_PROPS`,支持 Preset Color Animations 驱动 |
+| `97bb99f` | 颜色 list 转 tuple,修 PIL `color must be int or tuple` |
+| `6132742` | 修 `value_at` 中间帧 hold 在第一帧的 bug |
 
 ### v2.0.0（2026-09）
 

@@ -12,6 +12,7 @@
 2. [画布动画（Canvas + 文字组合）](#2-画布动画)
 3. [语音识别（Speech Recognition 完整流程）](#3-语音识别)
 4. [字幕生成（从音频到完整字幕视频）](#4-字幕生成)
+5. [示例工作流文件 (`example_workflows/`)](#5-示例工作流文件-example_workflows)
 
 ---
 
@@ -602,3 +603,41 @@ Whisper 模型被 `lru_cache` 缓存，权重落在
 - Combine Video: 5-30 秒
 
 最终 MP4 在 `H:\ComfyUI\output\video\`。
+
+---
+
+## 5. 示例工作流文件 (`example_workflows/`)
+
+5 个开箱即用的工作流 JSON 文件,放在 `example_workflows/` 目录,
+也是 `user/workflows/`` 的拷贝(ComfyUI 加载路径)。每个文件都包含
+**稠密的逐帧关键帧**(因为 Python 端 `value_at` 用 hold-style 插值,只
+有每帧一个 keyframe 时才能正确显示中间帧)。
+
+| 文件 | 内容 | frame_count |
+|------|------|---|
+| `mana_move_and_color.json` | 文字移动 + 颜色变化(SV → Preset Color → Combiner) | 30 |
+| `mana_diagonal_movement.json` | 文字斜向移动(SV + SV → Combiner) | 60 |
+| `mana_compound_animation.json` | 4 维复合动画(移动 + 移动 + 颜色 + 旋转) | 30 |
+| `mana_slow_ltr_ttb.json` | 慢速左→右,前 30 帧不动,后 30 帧上→下 | 60 |
+| `mana_slow_diagonal_bl_tr.json` | 慢速左下→右上对角线 | 60 |
+
+**加载方法**:
+1. 启动 ComfyUI,在浏览器中按 `Ctrl+R` 刷新
+2. 左侧菜单 → **Load** → 选择对应文件
+3. 点击 **Queue Prompt**
+
+**修改工作流**:
+- 改文字:Text to Image Generator 的 `text` widget
+- 改颜色轨迹:Preset Color Animations 的 `color_preset`(rainbow/sunset/fire 等)
+- 改移动轨迹:在 Scheduled Values 节点的图表上**点 2 个点**(起点和终点),然后
+  点 **Generate Values** 重新生成稠密关键帧
+- 改缓动类型:Scheduled Values 的 `easing_type` widget(linear/easeOutQuad/easeInOutQuint 等)
+- 改移动距离:Scheduled Values 的 `value_range`(y 轴范围),影响 schedule 数字大小
+- 改时长:`frame_count`(所有 SV + Preset + Text to Image 必须一致)
+
+**注意**:
+- 这些 JSON 里 schedule 是**预先生成的稠密 keyframes**(60 帧 / 30 帧),
+  不需要再点 Generate Values
+- 手动改 Scheduled Values 节点的图表后,需要重新 Generate 才能保存到 JSON
+- Schedule Combiner 的 13 个 optional 输入:没接的留空就行,combiner 自动跳过
+
